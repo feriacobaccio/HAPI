@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>HAPI · Plantas de Iluminación</title>
+<meta name="description" content="HAPI — Herramienta de Armado de Plantas de Iluminación. Software libre para enseñar y diseñar iluminación de cine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"><i></i></span>
+      <div><h1>HAPI</h1><p class="sub">Herramienta de Armado de Plantas de Iluminación</p></div>
+      <input id="sceneName" class="scenename" aria-label="Nombre de la escena" value="Escena sin título">
+    </div>
+    <div class="row actions">
+      <button class="btn" id="undo" disabled title="Deshacer el último cambio (Ctrl+Z)">↶ Deshacer</button>
+      <button class="btn" id="save" title="Guardar la escena como archivo">Guardar escena</button>
+      <button class="btn" id="open" title="Abrir un archivo de escena">Abrir escena</button>
+      <input type="file" id="openFile" accept=".json,.hapi,application/json" hidden>
+      <button class="btn" id="dlPlan">Planta JPG</button>
+      <button class="btn" id="dlShot">Plano de referencia JPG</button>
+      <button class="btn" id="present" title="Modo presentación (P)">Presentar</button>
+      <label class="note" for="quality">Calidad</label>
+      <select id="quality" class="sel"><option value="baja">Baja</option><option value="media" selected>Media</option><option value="alta">Alta</option></select>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- columna izquierda: pestañas -->
+    <div class="col left">
+      <nav class="tabs" role="tablist" id="tabs">
+        <button role="tab" data-tab="escena" aria-selected="true">Escena</button>
+        <button role="tab" data-tab="personajes" aria-selected="false">Personajes</button>
+        <button role="tab" data-tab="equipos" aria-selected="false">Equipos</button>
+        <button role="tab" data-tab="camara" aria-selected="false">Cámara</button>
+      </nav>
+
+      <section class="tabpanel" data-panel="escena">
+        <div class="panel">
+          <h2>Tipo de escena</h2>
+          <div class="seg wide" id="envMode"><button data-m="estudio">Estudio</button><button data-m="interior">Interior</button><button data-m="exterior">Exterior</button></div>
+          <div class="presets" id="presets"></div>
+        </div>
+        <div class="panel" data-for="estudio">
+          <h2>Fondo de estudio</h2>
+          <div class="f"><label for="bgc">Color</label><select id="bgc"><option value="#6d6d70">Gris medio</option><option value="#141414">Negro</option><option value="#e8e6e1">Blanco</option><option value="#2f9a4a">Verde croma</option><option value="#2451b8">Azul croma</option><option value="#6a1f2b">Bordó</option><option value="#23324a">Azul noche</option></select></div>
+          <div class="f"><label for="bgd">Distancia</label><input type="range" id="bgd" min="1.2" max="5" step="0.1"><output id="bgdV"></output></div>
+        </div>
+        <div class="panel" data-for="interior">
+          <h2>Habitación</h2>
+          <div class="f"><label for="rw">Ancho</label><input type="range" id="rw" min="3" max="12" step="0.1"><output id="rwV"></output></div>
+          <div class="f"><label for="rd">Profundidad</label><input type="range" id="rd" min="3" max="12" step="0.1"><output id="rdV"></output></div>
+          <div class="f"><label for="rh">Alto</label><input type="range" id="rh" min="2.3" max="4.5" step="0.05"><output id="rhV"></output></div>
+          <div class="f"><label for="rwall">Paredes</label><select id="rwall"><option value="#cdc6ba">Hueso</option><option value="#f0eee9">Blanco</option><option value="#8f9c8a">Verde salvia</option><option value="#4a5568">Gris pizarra</option><option value="#a8573f">Terracota</option><option value="#2b2b30">Negro</option></select></div>
+          <div class="f"><label for="rfloor">Piso</label><select id="rfloor"><option value="#6e5a48">Parquet</option><option value="#b9b2a6">Cerámica clara</option><option value="#3d3a37">Cemento oscuro</option><option value="#8a3b2e">Alfombra bordó</option></select></div>
+          <p class="note">Si la cámara queda afuera, la pared de ese lado se vuelve invisible para la cámara, como una pared removible en un set.</p>
+        </div>
+        <div class="panel" data-for="exterior">
+          <h2>Entorno</h2>
+          <div class="seg wide" id="extKind"><button data-k="abierto">Terreno abierto</button><button data-k="calle">Calle con fachada</button><button data-k="patio">Patio</button></div>
+        </div>
+        <div class="panel" data-for="natural">
+          <h2>Luz natural</h2>
+          <div class="f"><label for="hour">Hora</label><input type="range" id="hour" min="0" max="23.9167" step="0.0833"><output id="hourV"></output></div>
+          <div class="chips" id="hourQuick"><button data-q="amanecer">Amanecer</button><button data-q="manana">Mañana</button><button data-q="mediodia">Mediodía</button><button data-q="dorada">Hora dorada</button><button data-q="azul">Hora azul</button><button data-q="noche">Noche</button></div>
+          <div class="f"><label for="month">Fecha</label><div class="pair"><select id="month"></select><input type="number" id="day" min="1" max="31" aria-label="Día"></div></div>
+          <div class="f"><label for="city">Ciudad</label><select id="city"></select></div>
+          <div class="f" id="customLoc" hidden><span>Lat · Lon · UTC</span><div class="pair"><input type="number" id="lat" step="0.01" aria-label="Latitud"><input type="number" id="lon" step="0.01" aria-label="Longitud"><input type="number" id="tz" step="1" aria-label="Huso horario"></div></div>
+          <div class="f"><label for="north">Norte del set</label><input type="range" id="north" min="0" max="355" step="5"><output id="northV"></output></div>
+          <div class="meter" id="sunInfo"></div>
+          <p class="note">Posición aproximada del sol para planificar a qué hora grabar. La brújula de la planta muestra el norte y de dónde viene el sol.</p>
+        </div>
+        <div class="panel">
+          <div class="f"><label for="amb">Luz ambiente extra</label><input type="range" id="amb" min="0" max="60" step="1"><output id="ambV"></output></div>
+        </div>
+        <div class="panel">
+          <h2>Mobiliario</h2>
+          <div class="lib" id="libMueble"></div>
+          <p class="note">Tocá para agregar, o arrastrá a la planta.</p>
+        </div>
+      </section>
+
+      <section class="tabpanel" data-panel="personajes" hidden>
+        <div class="panel">
+          <div class="row" style="justify-content:space-between"><div class="seg" id="ptab"><button data-i="0">Personaje 1</button><button data-i="1">Personaje 2</button></div><button class="btn" id="p2toggle">Agregar 2° personaje</button></div>
+          <div class="f"><span>Posición</span><div class="seg" id="pose"><button data-pose="sentado">Sentado</button><button data-pose="pie">De pie</button><button data-pose="elevado">Elevado</button></div></div>
+          <div class="f"><label for="srot">Rotación</label><input type="range" id="srot" min="-180" max="180" step="5"><output id="srotV"></output></div>
+          <div class="f"><span>Respecto a cámara</span><div class="seg" id="rotq"><button data-o="0">Frente</button><button data-o="-45">3/4 izq.</button><button data-o="45">3/4 der.</button><button data-o="-90">Perfil izq.</button><button data-o="90">Perfil der.</button><button data-o="180">Espaldas</button></div></div>
+          <div class="f"><span>Tono de piel</span><div class="skins" id="skin"></div></div>
+          <p class="note">Mové a cada personaje en la planta o en la vista Set 3D.</p>
+        </div>
+      </section>
+
+      <section class="tabpanel" data-panel="equipos" hidden>
+        <div class="panel">
+          <h2>Equipos de iluminación</h2>
+          <div class="lib" id="libLuz"></div>
+          <h2>Prácticas (aparecen en cuadro)</h2>
+          <div class="lib" id="libPractica"></div>
+          <h2>Control de luz</h2>
+          <div class="lib" id="libControl"></div>
+          <p class="note" id="budget"></p>
+        </div>
+        <div class="panel">
+          <h2>En el set</h2>
+          <ul class="items" id="items"></ul>
+        </div>
+      </section>
+
+      <section class="tabpanel" data-panel="camara" hidden>
+        <div class="panel">
+          <h2>Lente · sensor 35 mm</h2>
+          <div class="lens" id="lens"><button data-l="fish">15<small>ojo de pez</small></button><button data-l="18">18<small>angular</small></button><button data-l="50">50<small>normal</small></button><button data-l="90">90<small>tele corto</small></button><button data-l="135">135<small>tele</small></button></div>
+          <p class="lensinfo" id="lensinfo"></p>
+          <div class="f"><span>Encuadre en</span><div class="seg" id="frame"><button data-fr="p1">Personaje 1</button><button data-fr="p2">Personaje 2</button><button data-fr="both">Plano conjunto</button></div></div>
+          <div class="f"><span>Altura</span><div class="seg" id="camH"><button data-h="bajo">Baja</button><button data-h="normal">Normal</button><button data-h="alto">Alta</button></div></div>
+          <div class="f"><span>Angulación</span><div class="seg" id="camA"><button data-a="picado">Picado</button><button data-a="normal">Normal</button><button data-a="contrapicado">Contrapicado</button><button data-a="holandes">Holandés</button><button disabled title="Cenital: referencia, no se aplica en este set">Cenital</button><button disabled title="Nadir: referencia, no se aplica en este set">Nadir</button></div></div>
+          <div class="f"><label for="hoff">Altura fina</label><input type="range" id="hoff" min="-0.5" max="0.5" step="0.05"><output id="hoffV"></output></div>
+          <div class="f"><label for="tilt">Inclinación fina</label><input type="range" id="tilt" min="-15" max="15" step="1"><output id="tiltV"></output></div>
+        </div>
+        <div class="panel">
+          <h2>Exposición</h2>
+          <div class="f"><label for="iris">Diafragma</label><input type="range" id="iris" min="0" max="8" step="1"><output id="irisV"></output></div>
+          <div class="f"><label for="iso">ISO</label><input type="range" id="iso" min="0" max="7" step="1"><output id="isoV"></output></div>
+          <div class="f"><span>Filtro ND</span><div class="seg" id="nd"><button data-nd="0">Sin ND</button><button data-nd="0.3">0.3</button><button data-nd="0.6">0.6</button><button data-nd="0.9">0.9</button><button data-nd="1.2">1.2</button><button data-nd="1.8">1.8</button></div></div>
+          <div class="row"><button class="btn" id="meter">Medir en el rostro</button><span class="note" id="meterV">Ajusta el diafragma según la luz que llega a la cara.</span></div>
+          <div class="f"><label for="wb">Balance</label><input type="range" id="wb" min="3000" max="10000" step="100"><output id="wbV"></output></div>
+        </div>
+        <div class="panel">
+          <h2>Foco</h2>
+          <div class="row"><input type="checkbox" id="dof"><label for="dof">Profundidad de campo</label></div>
+          <div class="f"><span>Foco en</span><div class="seg" id="focusMode"><button data-fm="p1">Personaje 1</button><button data-fm="p2">Personaje 2</button><button data-fm="manual">Manual</button></div></div>
+          <div class="f"><label for="focus">Distancia</label><input type="range" id="focus" min="0.5" max="12" step="0.05"><output id="focusV"></output></div>
+          <p class="lensinfo" id="dofinfo"></p>
+        </div>
+        <div class="panel">
+          <h2>Movimiento A → B</h2>
+          <p class="note">Ubicá la cámara en el inicio y guardala como A; movela al final y guardala como B.</p>
+          <div class="row"><button class="btn" id="saveA">Guardar A</button><button class="btn" id="saveB">Guardar B</button><button class="btn" id="goA" disabled>Ver A</button><button class="btn" id="goB" disabled>Ver B</button></div>
+          <div class="row"><button class="btn primary" id="playMove" disabled>Reproducir</button><button class="btn" id="dlAB" disabled>Cuadros A y B JPG</button><button class="btn" id="clearAB" disabled>Borrar</button></div>
+          <p class="lensinfo" id="moveinfo"></p>
+        </div>
+      </section>
+    </div>
+
+    <!-- centro: monitor -->
+    <div class="col center">
+      <div class="viewbox">
+        <div class="stagebar">
+          <div class="seg" id="vtabs"><button data-v="monitor">Monitor de cámara</button><button data-v="set">Set 3D</button></div>
+          <div class="row"><label class="note" for="pip">Vista chica</label><input type="checkbox" id="pip" checked><label class="note" for="thirdsChk">Tercios</label><input type="checkbox" id="thirdsChk" checked></div>
+        </div>
+        <div class="stage" id="stage">
+          <canvas id="gl" aria-label="Vista del set"></canvas>
+          <div class="hud" id="hud">
+            <div class="thirds" id="thirds"></div><div class="frame"></div>
+            <div class="tl"><span class="rec">● REC</span><span id="hLens"></span><span id="hT"></span><span id="hIso" class="opt"></span></div>
+            <div class="tr"><span id="hFocus"></span><span id="hWb"></span><span class="opt">24 fps</span></div>
+            <div class="bl"><span id="hCam"></span></div>
+            <div class="br"><span id="hTime"></span></div>
+            <div class="blk" id="blk"></div>
+          </div>
+          <span class="pipl" id="pipl"></span>
+          <span class="hint" id="hint" hidden>Arrastrá para girar · clic derecho o Shift para desplazar · rueda para acercar · clic en un objeto para seleccionarlo</span>
+          <button class="btn exitp" id="exitPresent" hidden>Salir de presentación (Esc)</button>
+        </div>
+        <p class="note under">Teclas: <b>V</b> cambia de vista · <b>1–5</b> lentes · <b>P</b> presentación · <b>Supr</b> quita el seleccionado · <b>Ctrl+Z</b> deshacer.</p>
+      </div>
+      <section class="glos" aria-label="Guía rápida">
+        <div><h3>Luz dura y suave</h3><p>Cuanto más chica es la fuente en relación al sujeto, más definida es la sombra. Fresnel, HMI, bombita y sol directo dan sombra marcada; PowerFlo, rebotes, difusión o la luz de una ventana la ablandan.</p></div>
+        <div><h3>Viseras y banderas</h3><p>Las viseras recortan el haz en el equipo. La bandera, más lejos, corta con más precisión y evita que la luz se escape al fondo.</p></div>
+        <div><h3>Temperatura de color</h3><p>Vela 1850 K, tungsteno 3200 K, sol de mediodía y HMI 5600 K, sombra de cielo 8000 K o más. El balance de la cámara define qué se ve neutro.</p></div>
+        <div><h3>Hora del día</h3><p>Con el sol bajo la luz es cálida y lateral; al mediodía, dura y desde arriba. La hora azul llega después de que el sol se pone: poca luz, muy fría.</p></div>
+      </section>
+    </div>
+
+    <!-- derecha: planta y propiedades -->
+    <div class="col right">
+      <section class="panel planbox">
+        <div class="row" style="justify-content:space-between"><h2>Planta</h2><div class="row"><button class="btn zb" id="zOut" aria-label="Alejar">−</button><button class="btn zb" id="zFit">Ajustar</button><button class="btn zb" id="zIn" aria-label="Acercar">+</button></div></div>
+        <canvas id="plan" aria-label="Planta de iluminación y cámara"></canvas>
+        <p class="note">Arrastrá para mover · punto blanco para girar · arrastrá el fondo para desplazar · rueda para acercar.</p>
+      </section>
+      <section class="panel props" id="props"></section>
+    </div>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="dragGhost" hidden></div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
