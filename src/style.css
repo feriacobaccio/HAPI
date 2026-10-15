@@ -147,3 +147,12 @@ body.present .grid{display:block;height:100%}
 body.present .center,body.present .viewbox{height:100%;display:block;padding:0}
 body.present .stage{height:100%;aspect-ratio:auto;border-radius:0;border:0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.modal{position:fixed;inset:0;z-index:50;background:#0008;display:grid;place-items:center;padding:16px}
+.modal-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;width:min(760px,100%);max-height:85vh;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.preset-group{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.preset-group h3{font-size:13px;color:var(--muted);font-weight:600}
+.helplist{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--muted)}
+.helplist b{color:var(--fg)}
+.tabs{grid-template-columns:repeat(5,1fr)}
+.tabs button{font-size:12.5px;padding:8px 2px}

@@ -98,7 +98,7 @@ export function legendLines() {
     }
     return s;
   });
-  const cam = `Cámara: ${L.label} · altura ${E.camHeight().toFixed(2)} m · ${S.cam.a}${S.cam.tilt ? ' ' + S.cam.tilt + '°' : ''} · T${TSTOPS[S.cam.T]} · ISO ${ISOS[S.cam.iso]}${S.cam.nd ? ' · ND ' + S.cam.nd.toFixed(1) : ''} · balance ${S.cam.wb} K`;
+  const cam = `Cámara: ${L.label} · altura ${E.camHeight().toFixed(2)} m · ${S.cam.a}${S.cam.tilt ? ' ' + S.cam.tilt + '°' : ''} · T${TSTOPS[S.cam.T]} · ISO ${ISOS[S.cam.iso]} · ${S.cam.fps} fps ${S.cam.shutter}°${S.cam.nd ? ' · ND ' + S.cam.nd.toFixed(1) : ''} · balance ${S.cam.wb} K`;
   let place;
   if (env.mode === 'estudio') place = `Estudio · fondo ${$('#bgc').selectedOptions[0].textContent.toLowerCase()} a ${env.studio.dist.toFixed(1)} m`;
   else { const p = sunPosition(env.time); place = `${env.mode === 'interior' ? `Interior ${env.room.w.toFixed(1)} × ${env.room.d.toFixed(1)} m` : 'Exterior · ' + ({ abierto: 'terreno abierto', calle: 'calle', patio: 'patio' })[env.ext.kind]} · ${hourLabel(env.time.hour)} del ${env.time.day}/${env.time.month} en ${CITIES[env.time.city].name} · ${phaseName(p.elev).toLowerCase()}, sol a ${p.elev.toFixed(0)}°`; }

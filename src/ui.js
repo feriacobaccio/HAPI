@@ -1,7 +1,8 @@
 // Paneles, propiedades y controles de HAPI.
 import * as THREE from 'three';
 import { S, UI, $, $$, D2R, R2D, clamp, fmt, TSTOPS, ISOS, MAX_SHADOW_LIGHTS, req, on, emit, toast, nextId } from './state.js';
-import { TYPES, BULBS, FLAG_SIZES, DIFF, GEL, FACES, LENSES, SKINS, CITIES, WOODS } from './catalog.js';
+import { TYPES, BULBS, FLAG_SIZES, DIFF, GEL, FACES, LENSES, SKINS, CITIES, WOODS, BUTTERFLY_SIZES, BUTTERFLY_FACES, APPLE } from './catalog.js';
+import { freeSpot } from './collide.js';
 import * as E from './engine.js';
 import { drawPlan, PV, zoomPlan, planWorld, planContains } from './plan.js';
 import { sunPosition, findHour, solarNoon, phaseName, hourLabel, daylight } from './sun.js';
@@ -24,6 +25,12 @@ export function defaults(type) {
     Object.assign(it, { y: h, p: type === 'vela' ? 0 : type === 'bombita' ? 2 : 2, k: T.kelvins[0], flicker: type === 'vela' });
   }
   if (T.cat === 'mueble') Object.assign(it, { y: 0, color: type === 'sillon' ? '#5a6b7a' : type === 'cama' ? '#c9b28f' : '#7a5634' });
+  if (T.cat === 'grip') { it.y = 0; delete it.on; delete it.dim; }
+  if (type === 'riel') it.len = 3.6;
+  if (type === 'jib') Object.assign(it, { len: 4.5, arm: 15 });
+  if (type === 'butterfly') Object.assign(it, { side: 2.44, face: 'diff', y: 2.8, pitch: -90 });
+  if (type === 'applebox') Object.assign(it, { size: 'full', count: 1 });
+  if (type === 'tarima') it.h = 0.4;
   if (type === 'ventana') Object.assign(it, { wall: 0, u: 0, w: 1.6, h: 1.3, sill: 0.9, y: 0 });
   if (type === 'puerta') Object.assign(it, { wall: 3, u: 0, w: 0.9, h: 2.05, sill: 0, open: 70, y: 0 });
   return it;
@@ -46,9 +53,10 @@ export function addItem(type, pos) {
     }
     const a = base + best * D2R; it.x = Math.round((P.x + Math.sin(a) * d) * 20) / 20; it.z = Math.round((P.z + Math.cos(a) * d) * 20) / 20;
   }
-  if (T.cat === 'abertura') E.snapOpening(it, pos ? pos.x : 0, pos ? pos.z : -10);
+  if (T.cat === 'abertura') E.snapOpening(it, pos ? pos.x : 0, pos ? pos.z : E.roomBounds().zB);
   if ((T.cat === 'luz' || T.cat === 'control') && !(pos && pos.yaw !== undefined)) { aimAtSubject(it); if (type === 'flag') it.pitch = 0; }
-  if (T.cat === 'mueble' && !(pos && pos.yaw !== undefined)) { const P = S.people[0]; it.yaw = Math.round(Math.atan2(P.x - it.x, P.z - it.z) * R2D / 15) * 15; }
+  if ((T.cat === 'mueble' || T.cat === 'grip') && it.type !== 'butterfly' && !(pos && pos.yaw !== undefined)) { const P = S.people[0]; it.yaw = Math.round(Math.atan2(P.x - it.x, P.z - it.z) * R2D / 15) * 15; }
+  if (T.cat !== 'abertura') { const [fx, fz] = freeSpot(it, it.x, it.z, S.env.mode === 'interior' ? E.roomBounds() : null); it.x = fx; it.z = fz; }
   S.items.push(it); E.buildItem(it); return it;
 }
 export function select(id) { UI.sel = id; renderItems(); renderProps(); req(); drawPlan(); attachGizmo(); }
@@ -60,8 +68,8 @@ on('camChanged', () => updateLensInfo());
 export let attachGizmo = () => {}; export const setAttachGizmo = f => { attachGizmo = f; };
 
 /* ---------- library ---------- */
-const LIBS = { libLuz: ['hmi', 'fresnel', 'powerflo', 'tube', 'panel'], libPractica: ['velador', 'pie', 'colgante', 'bombita', 'vela'], libControl: ['flag', 'bounce'], libMueble: ['mesa', 'silla', 'sillon', 'biblioteca', 'cama', 'escritorio', 'ventana', 'puerta'] };
-const SUB = { hmi: '575 W a 12 kW · 5600 K', fresnel: '300 W a 2 kW · 3200 K', powerflo: 'Fluorescente · suave', tube: 'Tipo Astera · RGB', panel: 'RGB · semisuave', velador: 'LED 4 a 15 W', pie: 'LED 4 a 15 W', colgante: 'LED 4 a 15 W', bombita: 'Incandescente 25 a 100 W', vela: '12 lm · 1850 K', flag: 'Recorta la luz', bounce: 'Blanco, plata, oro, negro, difusión', ventana: 'Solo interior', puerta: 'Solo interior' };
+const LIBS = { libLuz: ['hmi', 'fresnel', 'powerflo', 'tube', 'panel'], libPractica: ['velador', 'pie', 'colgante', 'bombita', 'vela'], libControl: ['flag', 'bounce'], libMueble: ['mesa', 'silla', 'sillon', 'biblioteca', 'cama', 'escritorio', 'ventana', 'puerta'], libGrip: ['riel', 'dolly', 'jib', 'slider', 'steadicam', 'tripode', 'butterfly', 'applebox', 'tarima', 'escalera', 'bolsa'] };
+const SUB = { hmi: '575 W a 12 kW · 5600 K', fresnel: '300 W a 2 kW · 3200 K', powerflo: 'Fluorescente · suave', tube: 'Tipo Astera · RGB', panel: 'RGB · semisuave', velador: 'LED 4 a 15 W', pie: 'LED 4 a 15 W', colgante: 'LED 4 a 15 W', bombita: 'Incandescente 25 a 100 W', vela: '12 lm · 1850 K', flag: 'Recorta la luz', bounce: 'Blanco, plata, oro, negro, difusión', ventana: 'Solo interior', puerta: 'Solo interior', riel: 'Tramos de 1,2 m', dolly: 'Carro con columna', jib: 'Brazo de 3 a 9 m', slider: '1,2 m', steadicam: 'Cámara en mano estable', tripode: 'Segunda cámara', butterfly: '6×6, 8×8, 12×12', applebox: 'Completo a pancake', tarima: '20 a 60 cm', escalera: '1,8 m', bolsa: 'Contrapeso' };
 for (const [id, list] of Object.entries(LIBS)) $('#' + id).innerHTML = list.map(t => `<button data-add="${t}">${TYPES[t].name}<small>${SUB[t] || TYPES[t].desc.split('.')[0]}</small></button>`).join('');
 let libDrag = null;
 document.addEventListener('pointerdown', e => {
@@ -84,7 +92,7 @@ document.addEventListener('pointerup', e => {
 /* ---------- items list ---------- */
 export function renderItems() {
   $('#items').innerHTML = S.items.map((it, i) => {
-    const T = TYPES[it.type], col = E.isLight(it) ? (it.on ? E.colorHex(E.lightColor(it)) : '#444') : it.type === 'bounce' ? FACES[it.face].hex : T.cat === 'mueble' ? it.color : '#e8e4ee';
+    const T = TYPES[it.type], col = E.isLight(it) ? (it.on ? E.colorHex(E.lightColor(it)) : '#444') : it.type === 'bounce' ? FACES[it.face].hex : T.cat === 'mueble' ? it.color : T.cat === 'grip' ? '#8d9096' : '#e8e4ee';
     return `<li data-id="${it.id}" class="${UI.sel === it.id ? 'sel' : ''}"><span class="dot" style="background:${col}"></span><span>${i + 1}. ${E.itemName(it)}</span>${E.isLight(it) ? `<button class="pw" data-pw="${it.id}" aria-pressed="${it.on}">${it.on ? 'ON' : 'OFF'}</button>` : '<span></span>'}</li>`;
   }).join('') || '<li class="note">Todavía no hay nada en el set. Agregá equipos arriba o elegí un esquema en Escena.</li>';
   $('#budget').textContent = `${lightCount()} de ${MAX_SHADOW_LIGHTS} luces con sombra en uso (el sol no cuenta).`;
@@ -130,6 +138,11 @@ export function renderProps(light) {
   if (it.type === 'tube') h += segRow('Orientación', 'orient', [['v', 'Vertical'], ['h', 'Horizontal']], it.orient);
   if (it.type === 'flag') h += segRow('Tamaño', 'size', Object.keys(FLAG_SIZES).map(k => [k, k.replace('x', '×') + ' cm']), it.size);
   if (it.type === 'bounce') h += segRow('Cara', 'face', Object.entries(FACES).map(([k, v]) => [k, v.label]), it.face);
+  if (it.type === 'riel') h += segRow('Largo', 'len', [1.2, 2.4, 3.6, 4.8, 6, 7.2, 9.6].map(v => [v, String(v).replace('.', ',') + ' m']), it.len);
+  if (it.type === 'jib') { h += segRow('Brazo', 'len', [3, 4.5, 6, 9].map(v => [v, String(v).replace('.', ',') + ' m']), it.len); h += rangeRow('p_arm', 'Ángulo del brazo', -30, 60, 1, it.arm, '°'); }
+  if (it.type === 'butterfly') { h += segRow('Marco', 'side', Object.entries(BUTTERFLY_SIZES).map(([k, v]) => [v, k + '×' + k]), it.side); h += segRow('Tela', 'face', Object.entries(BUTTERFLY_FACES), it.face); }
+  if (it.type === 'applebox') { h += segRow('Tamaño', 'size', Object.entries(APPLE).map(([k, v]) => [k, v[3]]), it.size); h += segRow('Cantidad', 'count', [1, 2, 3, 4].map(v => [v, String(v)]), it.count); }
+  if (it.type === 'tarima') h += segRow('Alto', 'h', [[0.2, '20 cm'], [0.4, '40 cm'], [0.6, '60 cm']], it.h);
   if (T.cat === 'mueble') h += `<div class="f"><label for="p_color">Color</label><select id="p_color">${Object.entries(WOODS).map(([k, v]) => `<option value="${k}" ${k === it.color ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`;
   if (T.cat === 'abertura') {
     h += rangeRow('p_w', 'Ancho', 0.6, 4, 0.05, it.w, ' m', 2) + rangeRow('p_h', 'Alto', 0.5, Math.min(2.6, S.env.room.h - 0.1), 0.05, it.h, ' m', 2);
@@ -137,9 +150,10 @@ export function renderProps(light) {
     else h += rangeRow('p_open', 'Apertura', 0, 100, 5, it.open, '°');
     h += `<p class="note">Movela en la planta: se desliza por la pared más cercana.</p>`;
   } else {
-    h += rangeRow('p_y', T.cat === 'mueble' ? 'Elevación' : T.practical ? 'Altura de apoyo' : 'Altura', 0, T.cat === 'mueble' ? 1.2 : 4, 0.05, it.y, ' m', 2);
+    if (T.cat !== 'grip' || it.type === 'butterfly' || it.type === 'applebox') h += rangeRow('p_y', T.cat === 'mueble' || it.type === 'applebox' ? 'Elevación' : T.practical ? 'Altura de apoyo' : 'Altura', 0, T.cat === 'mueble' || it.type === 'applebox' ? 1.2 : it.type === 'butterfly' ? 6 : 4, 0.05, it.y, ' m', 2);
     h += rangeRow('p_yaw', 'Rotación', -180, 180, 1, it.yaw, '°');
     if ((T.cat === 'luz' || T.cat === 'control') && !(it.type === 'tube' && it.orient === 'v')) h += rangeRow('p_pitch', 'Inclinación', -85, 45, 1, it.pitch, '°');
+    if (it.type === 'butterfly') h += rangeRow('p_pitch', 'Inclinación', -90, 90, 1, it.pitch, '°') + '<p class="note">−90°: horizontal sobre el actor, como un techo. 0°: vertical, como rebote o bandera gigante.</p>';
   }
   if (it.barn) h += `<p class="note">Viseras: 0° abiertas. Pasados los 30° cada hoja empieza a tapar el centro del haz.</p><div class="bd">${[['t', 'Arriba'], ['b', 'Abajo'], ['l', 'Izq.'], ['r', 'Der.']].map(([k, t]) => `<div class="f"><label for="p_b${k}">${t}</label><input type="range" id="p_b${k}" min="0" max="90" step="1" value="${it.barn[k]}"><output id="p_b${k}V">${it.barn[k]}°</output></div>`).join('')}</div>`;
   const two = S.people[1].on;
@@ -150,15 +164,15 @@ function updateReadouts(it) {
   const r = $('#readout'); if (!r) return;
   E.updateLights();
   const P1 = S.people[0], P2 = S.people[1], Ea = E.illum(it, P1._head, null, true, 0), E2 = P2.on ? E.illum(it, P2._head, null, true, 1) : null;
-  const T = Ea > 1 ? 2.8 * Math.sqrt(Ea / 215 / (ISOS[S.cam.iso] / 800)) : 0;
+  const T = Ea > 1 ? 2.8 * Math.sqrt(Ea / 215 * (ISOS[S.cam.iso] / 800) * E.shutterFactor()) : 0;
   const stop = TSTOPS.reduce((a, b) => Math.abs(Math.log(b / T)) < Math.abs(Math.log(a / T)) ? b : a, TSTOPS[0]);
   const hard = (TYPES[it.type].hard && (!it.diff || it.diff === 'none')) || it.type === 'bombita' || it.type === 'vela';
   r.innerHTML = `<span>${E2 != null ? 'Rostro 1' : 'En el rostro'} <b>${Ea < 1 ? (Ea > 0.05 ? Ea.toFixed(1) + ' lux' : '—') : Math.round(Ea) + ' lux'}</b></span>${E2 != null ? `<span>Rostro 2 <b>${E2 < 1 ? '—' : Math.round(E2) + ' lux'}</b></span>` : ''}<span>Diafragma sugerido <b>${Ea < 1 ? '—' : T > 22 ? '>T22' : T < 1.4 ? '<T1.4' : 'T' + stop}</b></span><span>Luz <b>${hard ? 'dura' : 'suave'}</b></span>${Ea < 1 && E.illum(it, P1._head, null) > 1 ? '<span class="tag warn">Bloqueada antes del rostro</span>' : ''}`;
 }
 $('#props').addEventListener('input', e => {
   const it = S.items.find(i => i.id === UI.sel); if (!it) return; const id = e.target.id, v = e.target.value, out = $('#' + id + 'V');
-  const num = { p_dim: ['dim', '%', 0], p_focus: ['focus', '', 2], p_k: ['k', ' K', 0], p_y: ['y', ' m', 2], p_yaw: ['yaw', '°', 0], p_pitch: ['pitch', '°', 0], p_w: ['w', ' m', 2], p_h: ['h', ' m', 2], p_sill: ['sill', ' m', 2], p_open: ['open', '°', 0] }[id];
-  if (num) { it[num[0]] = +v; if (out) out.textContent = fmt(+v, num[2]) + num[1]; if (id === 'p_y' && TYPES[it.type].cat !== 'mueble' && !TYPES[it.type].practical) E.buildItem(it); }
+  const num = { p_dim: ['dim', '%', 0], p_focus: ['focus', '', 2], p_k: ['k', ' K', 0], p_y: ['y', ' m', 2], p_yaw: ['yaw', '°', 0], p_pitch: ['pitch', '°', 0], p_w: ['w', ' m', 2], p_h: ['h', ' m', 2], p_sill: ['sill', ' m', 2], p_open: ['open', '°', 0], p_arm: ['arm', '°', 0] }[id];
+  if (num) { it[num[0]] = +v; if (out) out.textContent = fmt(+v, num[2]) + num[1]; if ((id === 'p_y' && TYPES[it.type].cat !== 'mueble' && !TYPES[it.type].practical) || id === 'p_arm') E.buildItem(it); }
   else if (id === 'p_rgb') { it.rgb = v; const bn = $('#blackNote'); if (bn) bn.hidden = !E.isBlack(v); }
   else if (id.startsWith('p_b')) { it.barn[id[3]] = +v; out.textContent = v + '°'; }
   else return;
@@ -174,8 +188,8 @@ $('#props').addEventListener('click', e => {
   const it = S.items.find(i => i.id === UI.sel); if (!it) return;
   const seg = e.target.closest('.seg[data-key] button');
   if (seg) {
-    const key = seg.parentElement.dataset.key, raw = seg.dataset.v, val = ['p', 'k'].includes(key) ? +raw : raw === 'true' ? true : raw === 'false' ? false : raw;
-    it[key] = val; if (['p', 'orient', 'size', 'face'].includes(key)) E.buildItem(it); else E.syncItem(it);
+    const key = seg.parentElement.dataset.key, raw = seg.dataset.v, val = ['p', 'k', 'len', 'side', 'count', 'h'].includes(key) ? +raw : raw === 'true' ? true : raw === 'false' ? false : raw;
+    it[key] = val; if (['p', 'orient', 'size', 'face', 'len', 'side', 'count', 'h'].includes(key)) E.buildItem(it); else E.syncItem(it);
     renderProps(); renderItems(); drawPlan(); return;
   }
   const act = e.target.closest('[data-act]'); if (!act) return; const a = act.dataset.act;
@@ -223,7 +237,7 @@ $('#envMode').addEventListener('click', e => { const b = e.target.closest('butto
 export function setEnvMode(m) {
   if (S.env.mode === m) return;
   if (m !== 'interior') { const ops = S.items.filter(i => TYPES[i.type].cat === 'abertura'); ops.forEach(o => S.items.splice(S.items.indexOf(o), 1)); }
-  S.env.mode = m; PV.custom = false;
+  S.env.mode = m; PV.custom = false; S.env.amb = m === 'estudio' ? 1 : 0;
   if (m === 'interior') { const b = E.roomBounds(); if (S.cam.z > b.zF + 1.5) S.cam.z = Math.min(S.cam.z, b.zF + 1.2); }
   E.buildEnvironment(); syncScenePanel(); renderItems(); updateLensInfo(); drawPlan(); req();
 }
@@ -288,7 +302,7 @@ export function updateLensInfo() {
   $('#dofinfo').innerHTML = L.fish ? 'Con el ojo de pez casi todo queda en foco: la profundidad de campo no se simula con este lente.' : !S.cam.dof ? 'Profundidad de campo desactivada: todo se ve nítido.' :
     `Foco a <b>${fd.toFixed(2)} m</b> · zona nítida de <b>${n0.toFixed(2)} m</b> a <b>${isFinite(f0) ? f0.toFixed(2) + ' m' : 'infinito'}</b>${isFinite(f0) ? ` (<b>${f0 - n0 < 1 ? Math.round((f0 - n0) * 100) + ' cm' : (f0 - n0).toFixed(2) + ' m'}</b>)` : ''}.`;
   $('#hLens').textContent = L.label; $('#hT').textContent = 'T' + TSTOPS[S.cam.T] + (S.cam.nd ? ' · ND ' + S.cam.nd.toFixed(1) : ''); $('#hIso').textContent = 'ISO ' + ISOS[S.cam.iso];
-  $('#hWb').textContent = 'WB ' + S.cam.wb + 'K'; $('#hFocus').textContent = S.cam.dof && !L.fish ? 'Foco ' + fd.toFixed(1) + ' m' : '';
+  $('#hWb').textContent = 'WB ' + S.cam.wb + 'K'; $('#hFps').textContent = `${S.cam.fps} fps · ${S.cam.shutter}°`; $('#shutterV').textContent = `= 1/${Math.round(S.cam.fps * 360 / S.cam.shutter)} s`; $('#hFocus').textContent = S.cam.dof && !L.fish ? 'Foco ' + fd.toFixed(1) + ' m' : '';
   $('#hCam').textContent = `Cámara ${E.camHeight().toFixed(2)} m · ${({ normal: 'normal', picado: 'picado', contrapicado: 'contrapicado', holandes: 'holandés' })[S.cam.a]}${S.cam.tilt ? ' ' + (S.cam.tilt > 0 ? '+' : '−') + Math.abs(S.cam.tilt) + '°' : ''}`;
   if (S.env.mode === 'estudio') $('#hTime').textContent = '';
 }
@@ -296,6 +310,7 @@ export function syncCamUI() {
   pressSeg('#lens', 'l', S.cam.lens); pressSeg('#camH', 'h', S.cam.h); pressSeg('#camA', 'a', S.cam.a); pressSeg('#nd', 'nd', S.cam.nd);
   setRange('hoff', S.cam.hOff, v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v * 100).toFixed(0) + ' cm');
   setRange('tilt', S.cam.tilt, v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + '°');
+  pressSeg('#shutter', 'sh', S.cam.shutter); pressSeg('#fps', 'fps', S.cam.fps);
   setRange('iris', S.cam.T, v => 'T' + TSTOPS[v]); setRange('iso', S.cam.iso, v => String(ISOS[v])); setRange('wb', S.cam.wb, v => v + ' K');
   $('#dof').checked = S.cam.dof; syncPersonUI(); updateLensInfo(); req();
 }
@@ -317,6 +332,8 @@ bindC('hoff', v => S.cam.hOff = v, v => (v > 0 ? '+' : v < 0 ? '−' : '') + Mat
 bindC('tilt', v => S.cam.tilt = v, v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + '°');
 bindC('iris', v => S.cam.T = v, v => 'T' + TSTOPS[v]);
 bindC('iso', v => S.cam.iso = v, v => String(ISOS[v]));
+$('#shutter').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.cam.shutter = +b.dataset.sh; pressSeg('#shutter', 'sh', S.cam.shutter); updateLensInfo(); req(); });
+$('#fps').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.cam.fps = +b.dataset.fps; pressSeg('#fps', 'fps', S.cam.fps); updateLensInfo(); req(); });
 bindC('wb', v => { S.cam.wb = v; S.items.forEach(E.syncItem); renderItems(); }, v => v + ' K');
 bindC('focus', v => { S.cam.focus = v; if (S.cam.fm !== 'manual') { S.cam.fm = 'manual'; syncPersonUI(); } }, v => v.toFixed(2) + ' m');
 
@@ -332,7 +349,7 @@ export function meterFace(quiet) {
     if (!(L.intensity > 0)) continue; const o = L.userData.op, wn = E.roomWalls()[o.wall].n, open = o.type === 'puerta' ? Math.sin((o.open || 0) * D2R) : 1;
     srcs.push(N => { const to = H.clone().sub(L.position), d2 = Math.max(0.2, to.lengthSq()); to.normalize(); const cw = Math.max(0, to.x * wn[0] + to.z * wn[1]), cf = N ? Math.max(0, -N.dot(to)) : 1; return L.intensity * o.w * o.h * open * cw * cf / d2; });
   }
-  for (const b of S.items) if (b.type === 'bounce' && b.obj && b.obj.bounceLight) {
+  for (const b of S.items) if ((b.type === 'bounce' || b.type === 'butterfly') && b.obj && b.obj.bounceLight) {
     const L = b.obj.bounceLight;
     srcs.push(N => { const lp = L.getWorldPosition(new THREE.Vector3()), to = H.clone().sub(lp), d2 = Math.max(0.1, to.lengthSq()); to.normalize(); const dir = L.target.getWorldPosition(new THREE.Vector3()).sub(lp).normalize(); return dir.dot(to) > Math.cos(L.angle) ? L.intensity * (N ? Math.max(0, -N.dot(to)) : 1) / d2 : 0; });
   }
@@ -343,7 +360,7 @@ export function meterFace(quiet) {
   for (let a = 0; a < 360; a += 30) for (const el of [0, 35]) { const N = new THREE.Vector3(Math.sin(a * D2R) * Math.cos(el * D2R), Math.sin(el * D2R), Math.cos(a * D2R) * Math.cos(el * D2R)); if (N.dot(Ncam) < -0.2) continue; const v = total(N); if (v > bestE) { bestE = v; bestN = N; } }
   const Ex = (total(Ncam) + bestE) / 2; // domo apuntado entre la cámara y la luz principal
   if (Ex < 0.3) { if (!quiet) toast('Casi no llega luz al rostro: encendé o apuntá un equipo.'); return; }
-  const isoF = ISOS[S.cam.iso] / 800, Tn = 2.8 * Math.sqrt(Ex * isoF / 215 * Math.pow(2, -S.cam.nd / 0.3));
+  const isoF = ISOS[S.cam.iso] / 800 * E.shutterFactor(), Tn = 2.8 * Math.sqrt(Ex * isoF / 215 * Math.pow(2, -S.cam.nd / 0.3));
   let best = 0; TSTOPS.forEach((t, i) => { if (Math.abs(Math.log(t / Tn)) < Math.abs(Math.log(TSTOPS[best] / Tn))) best = i; });
   S.cam.T = best; setRange('iris', best, v => 'T' + TSTOPS[v]);
   const tip = Tn > 25 ? ' Sobra luz: bajá el ISO o agregá ND.' : Tn < 1.3 ? ' Falta luz: subí el ISO o sumá luz.' : '';
@@ -371,7 +388,7 @@ export const snapLabel = s => `${LENSES[s.lens].label} · a ${Math.hypot(s.x - s
 let playing = false;
 export function refreshMove() {
   const A = S.move.A, B = S.move.B;
-  $('#goA').disabled = !A; $('#goB').disabled = !B; $('#playMove').disabled = !(A && B) || playing; $('#dlAB').disabled = !(A && B); $('#clearAB').disabled = !(A || B);
+  $('#goA').disabled = !A; $('#goB').disabled = !B; $('#railAB').disabled = !(A && B); $('#playMove').disabled = !(A && B) || playing; $('#dlAB').disabled = !(A && B); $('#clearAB').disabled = !(A || B);
   $('#moveinfo').innerHTML = !A && !B ? 'Todavía no hay posiciones guardadas.' : `${A ? `<b>A</b> ${snapLabel(A)}` : 'A sin guardar'}<br>${B ? `<b>B</b> ${snapLabel(B)}` : 'B sin guardar'}${A && B ? `<br>Movimiento: <b>${describeMove()}</b>` : ''}`;
   drawPlan(); req();
 }
@@ -380,6 +397,14 @@ $('#saveB').addEventListener('click', () => { S.move.B = snapCam(); refreshMove(
 $('#goA').addEventListener('click', () => applySnap(S.move.A));
 $('#goB').addEventListener('click', () => applySnap(S.move.B));
 $('#clearAB').addEventListener('click', () => { S.move.A = S.move.B = null; refreshMove(); });
+$('#railAB').addEventListener('click', () => {
+  const A = S.move.A, B = S.move.B; if (!A || !B) return;
+  const d = Math.hypot(B.x - A.x, B.z - A.z); if (d < 0.3) { toast('A y B están en el mismo lugar: no hace falta riel.'); return; }
+  const len = Math.min(9.6, Math.ceil((d + 1.2) / 1.2) * 1.2), yaw = Math.atan2(B.x - A.x, B.z - A.z) * R2D;
+  const rail = defaults('riel'); Object.assign(rail, { x: (A.x + B.x) / 2, z: (A.z + B.z) / 2, yaw, len }); S.items.push(rail); E.buildItem(rail);
+  const dl = defaults('dolly'); Object.assign(dl, { x: A.x, z: A.z, yaw }); S.items.push(dl); E.buildItem(dl);
+  renderItems(); drawPlan(); req(); toast(`Riel de ${len.toFixed(1).replace('.', ',')} m y carro agregados entre A y B.`);
+});
 $('#playMove').addEventListener('click', () => {
   const A = S.move.A, B = S.move.B; if (!A || !B || playing) return;
   playing = true; refreshMove(); setView('monitor'); applySnap(A);

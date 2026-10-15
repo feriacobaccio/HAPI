@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { S, UI, D2R, R2D, clamp, TSTOPS, ISOS, EXP_K, req } from './state.js';
-import { TYPES, DIFF, GRID, GEL, FACES, LENSES, BULBS, isLightType } from './catalog.js';
-import { std, mesh, cyl, box, MAT, buildPersonMesh, standMesh, buildFixture, buildFlag, buildBounce, buildPractical, buildFurniture } from './build.js';
+import { TYPES, DIFF, GRID, GEL, FACES, LENSES, BULBS, BUTTERFLY_FACES, APPLE, isLightType } from './catalog.js';
+import { std, mesh, cyl, box, MAT, buildPersonMesh, standMesh, buildFixture, buildFlag, buildBounce, buildPractical, buildFurniture, buildGrip } from './build.js';
 import { sunPosition, daylight, skyColors } from './sun.js';
 
 RectAreaLightUniformsLib.init();
@@ -37,9 +37,9 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.shadowMap.autoUpdate = false;
 renderer.autoClear = false;
-export const QUALITY = { baja: { pr: 1, shadow: 512, dof: 20 }, media: { pr: 1.5, shadow: 1024, dof: 36 }, alta: { pr: 2, shadow: 2048, dof: 48 } };
+export const QUALITY = { baja: { pr: 0.75, shadow: 512, dof: 16 }, media: { pr: 1, shadow: 1024, dof: 36 }, alta: { pr: 1.6, shadow: 2048, dof: 56 } };
 export function applyQuality() {
-  const q = QUALITY[UI.quality]; renderer.setPixelRatio(Math.min(q.pr, window.devicePixelRatio || 1));
+  const q = QUALITY[UI.quality]; renderer.setPixelRatio(clamp((window.devicePixelRatio || 1) * q.pr, 0.6, 3));
   S.items.forEach(it => it.obj && it.obj.main && it.obj.main.shadow && setShadowSize(it.obj.main));
   setShadowSize(sun, 2); dofMat.defines.SAMPLES = q.dof; dofMat.needsUpdate = true; req();
 }
@@ -85,12 +85,19 @@ export function openingWorld(it) {
   const w = roomWalls()[it.wall]; return { x: w.center[0] + w.dir[0] * it.u, z: w.center[1] + w.dir[1] * it.u, y: it.sill + it.h / 2, wall: w };
 }
 export function snapOpening(it, x, z) {
-  const walls = roomWalls(); let best = null, bd = 1e9;
-  for (const w of walls) {
-    const px = x - w.center[0], pz = z - w.center[1], u = px * w.dir[0] + pz * w.dir[1], d = Math.abs(px * w.n[0] + pz * w.n[1]);
-    if (d < bd) { bd = d; best = { wall: w.i, u: clamp(u, -w.len / 2 + it.w / 2 + 0.1, w.len / 2 - it.w / 2 - 0.1) }; }
+  const walls = roomWalls(), others = S.items.filter(o => o !== it && (o.type === 'ventana' || o.type === 'puerta'));
+  const ok = (wall, u) => { const w = walls[wall]; if (Math.abs(u) > w.len / 2 - it.w / 2 - 0.1 + 1e-6) return false; return !others.some(o => o.wall === wall && Math.abs(o.u - u) < (o.w + it.w) / 2 + 0.1); };
+  const order = walls.map(w => { const px = x - w.center[0], pz = z - w.center[1]; return { w, u: px * w.dir[0] + pz * w.dir[1], d: Math.abs(px * w.n[0] + pz * w.n[1]) }; }).sort((a, b) => a.d - b.d);
+  for (const { w, u } of order) {
+    const lim = w.len / 2 - it.w / 2 - 0.1; if (lim < 0) continue;
+    const u0 = clamp(u, -lim, lim);
+    if (ok(w.i, u0)) { it.wall = w.i; it.u = u0; return true; }
+    const cands = [];
+    for (const o of others.filter(o => o.wall === w.i)) cands.push(o.u - (o.w + it.w) / 2 - 0.11, o.u + (o.w + it.w) / 2 + 0.11);
+    const best = cands.filter(c => ok(w.i, c)).sort((a, b) => Math.abs(a - u0) - Math.abs(b - u0))[0];
+    if (best !== undefined && Math.abs(best - u0) < 2.5) { it.wall = w.i; it.u = best; return true; }
   }
-  Object.assign(it, best);
+  return false;
 }
 
 function wallMat(hex) { const m = std(hex, { roughness: 0.92 }); m.shadowSide = THREE.DoubleSide; return m; }
@@ -190,6 +197,11 @@ export function itemName(it) {
   if (T.powers) { const w = T.powers[it.p]; return `${T.name} ${w >= 1000 ? (w / 1000) + ' kW' : w + ' W'}`; }
   if (T.practical) { const b = BULBS[T.bulbs].options[it.p || 0]; return it.type === 'vela' ? 'Vela' : `${T.name} ${b[0]} W ${BULBS[T.bulbs].label.toLowerCase()}`; }
   if (it.type === 'bounce') return `Rebote · ${FACES[it.face].label.toLowerCase()}`;
+  if (it.type === 'butterfly') { const ft = Math.round((it.side || 2.44) / 0.3048); return `Butterfly ${ft}×${ft} · ${BUTTERFLY_FACES[it.face].toLowerCase()}`; }
+  if (it.type === 'riel') return `Riel ${(it.len || 3.6).toFixed(1)} m`;
+  if (it.type === 'jib') return `Jimmy jib ${(it.len || 4.5).toFixed(1)} m`;
+  if (it.type === 'applebox') return `Cajón de manzana ${APPLE[it.size || 'full'][3].toLowerCase()}${(it.count || 1) > 1 ? ' ×' + it.count : ''}`;
+  if (it.type === 'tarima') return `Tarima ${Math.round((it.h || 0.4) * 100)} cm`;
   if (it.type === 'flag') return `Bandera ${it.size.replace('x', '×')}`;
   return T.name;
 }
@@ -237,6 +249,15 @@ export function buildItem(it) {
       const tg = new THREE.Object3D(); tg.position.set(0, 0, 3); head.add(tg); bl.target = tg; head.add(bl); o.bounceLight = bl; o.bounceTarget = tg; o.lights.push(bl);
     }
   } else if (T.practical) Object.assign(o, buildPractical(it, head));
+  else if (T.cat === 'grip') {
+    if (it.type === 'butterfly') standMesh(it.y, root);
+    buildGrip(it, root, head);
+    if (it.type === 'butterfly' && it.face !== 'black') {
+      const bl = new THREE.SpotLight(0xffffff, 0, 0, (it.face === 'diff' ? 80 : 75) / 2 * D2R, 1, 2); bl.position.set(0, 0, 0.06); bl.castShadow = it.face === 'diff';
+      if (bl.castShadow) { setShadowSize(bl); bl.shadow.radius = 20; bl.shadow.camera.near = 0.1; bl.shadow.bias = -0.0005; }
+      const tg = new THREE.Object3D(); tg.position.set(0, 0, 3); head.add(tg); bl.target = tg; head.add(bl); o.bounceLight = bl; o.bounceTarget = tg; o.lights.push(bl);
+    }
+  }
   else if (T.cat === 'mueble') buildFurniture(it, head);
   if (isLight(it)) {
     let L;
@@ -280,7 +301,7 @@ export function syncItem(it) {
   const o = it.obj, T = TYPES[it.type]; if (!o) return;
   if (T.cat === 'abertura') { buildEnvironment(); return; }
   o.root.position.set(it.x, it.y, it.z); o.root.rotation.y = it.yaw * D2R;
-  o.head.rotation.x = (T.cat === 'luz' || T.cat === 'control') && !(it.type === 'tube' && it.orient === 'v') ? -it.pitch * D2R : 0;
+  o.head.rotation.x = ((T.cat === 'luz' || T.cat === 'control') && !(it.type === 'tube' && it.orient === 'v')) || it.type === 'butterfly' ? -it.pitch * D2R : 0;
   if (o.leaves.t) { const b = it.barn; o.leaves.t.rotation.x = b.t * D2R; o.leaves.b.rotation.x = -b.b * D2R; o.leaves.l.rotation.y = b.l * D2R; o.leaves.r.rotation.y = -b.r * D2R; }
   if (o.diffPlane) { o.diffPlane.visible = it.diff !== 'none'; const s = it.diff === 'box' ? 1.4 : 1; o.diffPlane.scale.set(s, s, 1); o.diffPlane.material.opacity = it.diff === 'box' ? 0.8 : 0.3; }
   if (isLight(it) && o.emissive) {
@@ -378,7 +399,8 @@ export function updateLights() {
   scene.updateMatrixWorld(true);
   // bounces and diffusion frames
   for (const b of S.items) {
-    if (b.type !== 'bounce' || !b.obj || !b.obj.bounceLight) continue;
+    if ((b.type !== 'bounce' && b.type !== 'butterfly') || !b.obj || !b.obj.bounceLight) continue;
+    const A = b.type === 'butterfly' ? (b.side || 2.44) ** 2 : 0.9;
     const F = FACES[b.face], P = b.obj.head.getWorldPosition(new THREE.Vector3()), n = worldDir(b.obj.head);
     let rgb = [0, 0, 0], back = [0, 0, 0];
     const addLight = (E, c, front) => { const t = front ? rgb : back; t[0] += E * c[0]; t[1] += E * c[1]; t[2] += E * c[2]; };
@@ -393,9 +415,9 @@ export function updateLights() {
       // la difusión transmite hacia el lado opuesto a la luz dominante
       const Ef = Math.max(...rgb), Eb = Math.max(...back), fromBack = Eb >= Ef, src = fromBack ? back : rgb, E = Math.max(Ef, Eb);
       b.obj.bounceTarget.position.set(0, 0, fromBack ? 3 : -3); bl.position.z = fromBack ? 0.06 : -0.06;
-      bl.intensity = 0.5 * E * 1.07 / Math.PI; if (E > 0) bl.color.setRGB(src[0] / E, src[1] / E, src[2] / E); b._lux = E;
+      bl.intensity = 0.5 * E * A / Math.PI; if (E > 0) bl.color.setRGB(src[0] / E, src[1] / E, src[2] / E); b._lux = E;
     } else {
-      const E = Math.max(...rgb); bl.intensity = F.rho * E * 0.9 / Math.PI;
+      const E = Math.max(...rgb); bl.intensity = F.rho * E * A / Math.PI;
       if (E > 0) bl.color.setRGB(rgb[0] / E * F.col[0], rgb[1] / E * F.col[1], rgb[2] / E * F.col[2]); b._lux = E;
     }
   }
@@ -456,7 +478,8 @@ export function dofRange(Sm) {
   const L = LENSES[S.cam.lens], f = L.f, N = TSTOPS[S.cam.T], c = 0.03, s = Sm * 1000, H = f * f / (N * c) + f;
   return [s * (H - f) / (H + s - 2 * f) / 1000, s < H ? s * (H - f) / (H - s) / 1000 : Infinity];
 }
-export function exposure() { return EXP_K / (TSTOPS[S.cam.T] ** 2) / Math.pow(2, S.cam.nd / 0.3) * (ISOS[S.cam.iso] / 800); }
+export const shutterFactor = () => ((S.cam.shutter || 180) / 360 / (S.cam.fps || 24)) * 48;
+export function exposure() { return EXP_K / (TSTOPS[S.cam.T] ** 2) / Math.pow(2, S.cam.nd / 0.3) * (ISOS[S.cam.iso] / 800) * shutterFactor(); }
 
 /* fisheye + depth of field post passes (HDR → tone mapping) */
 const post = (frag, uniforms, defines = {}) => new THREE.ShaderMaterial({ uniforms, defines, depthTest: false, depthWrite: false,

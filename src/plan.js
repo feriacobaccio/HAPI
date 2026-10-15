@@ -3,6 +3,9 @@ import { S, UI, D2R, R2D, clamp, req, emit, $ } from './state.js';
 import { TYPES, FLAG_SIZES, FACES, LENSES, SKINS } from './catalog.js';
 import { isLight, itemName, beamHalf, lightColor, colorHex, camTarget, focusDist, dofRange, syncItem, placePerson, roomBounds, roomWalls, openingWorld, snapOpening, sunDirection, nat } from './engine.js';
 import { hourLabel, phaseName } from './sun.js';
+import { footprint, resolveMove, collides } from './collide.js';
+const collidesYaw = (it, yaw) => collides(it, it.x, it.z, yaw);
+import { lumens } from './engine.js';
 
 export const plan = $('#plan');
 const PL = { x0: -4.5, x1: 4.5, z0: -3.2, z1: 5.8 };
@@ -97,6 +100,29 @@ export function drawPlanTo(ctx, W, theme) {
     ctx.beginPath(); ctx.moveTo(-w / 2 * m, d / 2 * m); ctx.lineTo(w / 2 * m, d / 2 * m); ctx.lineWidth = sel ? 4 : 2.5; ctx.stroke();
     ctx.restore();
     ctx.fillStyle = C.mut; ctx.font = F(theme === 'paper' ? 58 : 52); ctx.fillText((theme === 'paper' ? labelNum(it) + ' ' : '') + T.name, x - m * 0.3, z + 4);
+    if (dark) { const y = it.yaw * D2R, [hx, hz] = w2p(it.x + Math.sin(y) * HANDLE, it.z + Math.cos(y) * HANDLE, W); ctx.fillStyle = sel ? '#fff' : '#ffffff55'; ctx.beginPath(); ctx.arc(hx, hz, sel ? 5 : 3.5, 0, 7); ctx.fill(); }
+  }
+  // gripería (debajo de equipos y personajes)
+  for (const it of S.items) {
+    const T = TYPES[it.type]; if (T.cat !== 'grip' || it.type === 'butterfly') continue;
+    const [x, z] = w2p(it.x, it.z, W), sel = UI.sel === it.id && dark, f = footprint(it);
+    ctx.save(); ctx.translate(x, z); ctx.rotate(-(it.yaw || 0) * D2R); ctx.strokeStyle = sel ? '#FFB547' : C.mut; ctx.fillStyle = dark ? '#8d909622' : '#8d909633'; ctx.lineWidth = sel ? 3 : 1.5;
+    if (it.type === 'riel') {
+      const L = (it.len || 3.6) * m;
+      for (let t = -L / 2 + 0.15 * m; t <= L / 2; t += 0.6 * m) { ctx.beginPath(); ctx.moveTo(-0.37 * m, t); ctx.lineTo(0.37 * m, t); ctx.stroke(); }
+      ctx.lineWidth = sel ? 4 : 2.5; ctx.strokeStyle = sel ? '#FFB547' : C.fg; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 0.31 * m, -L / 2); ctx.lineTo(s * 0.31 * m, L / 2); ctx.stroke(); }
+    } else if (it.type === 'jib') {
+      const L = (it.len || 4.5) * Math.cos((it.arm || 15) * D2R) * m;
+      ctx.beginPath(); ctx.arc(0, 0, 0.42 * m, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = sel ? 5 : 3.5; ctx.strokeStyle = sel ? '#FFB547' : C.fg; ctx.beginPath(); ctx.moveTo(0, -0.9 * m); ctx.lineTo(0, L); ctx.stroke();
+      ctx.fillStyle = '#FFB547'; ctx.fillRect(-0.1 * m, L - 0.1 * m, 0.2 * m, 0.2 * m);
+    } else if (f) {
+      ctx.fillRect(-f.hw * m, -f.hd * m, f.hw * 2 * m, f.hd * 2 * m); ctx.strokeRect(-f.hw * m, -f.hd * m, f.hw * 2 * m, f.hd * 2 * m);
+      if (it.type === 'dolly' || it.type === 'tripode' || it.type === 'steadicam' || it.type === 'slider') { ctx.fillStyle = '#FFB547'; ctx.beginPath(); ctx.arc(0, it.type === 'dolly' ? 0.25 * m : 0, 0.07 * m, 0, 7); ctx.fill(); }
+    }
+    ctx.restore();
+    if (dark) { const y = (it.yaw || 0) * D2R, [hx, hz] = w2p(it.x + Math.sin(y) * HANDLE, it.z + Math.cos(y) * HANDLE, W); ctx.fillStyle = sel ? '#fff' : '#ffffff55'; ctx.beginPath(); ctx.arc(hx, hz, sel ? 5 : 3.5, 0, 7); ctx.fill(); }
+    ctx.fillStyle = C.mut; ctx.font = F(theme === 'paper' ? 58 : 52); ctx.fillText((theme === 'paper' ? labelNum(it) + ' ' : '') + itemName(it), x + m * 0.3, z + m * 0.1);
   }
   // people
   S.people.forEach((P, i) => {
@@ -111,12 +137,12 @@ export function drawPlanTo(ctx, W, theme) {
   });
   // equipment and control
   for (const it of S.items) {
-    const T = TYPES[it.type]; if (T.cat === 'mueble' || T.cat === 'abertura') continue;
+    const T = TYPES[it.type]; if (T.cat === 'mueble' || T.cat === 'abertura' || (T.cat === 'grip' && it.type !== 'butterfly')) continue;
     const [x, z] = w2p(it.x, it.z, W), y = it.yaw * D2R, sel = UI.sel === it.id && dark;
     ctx.save(); ctx.translate(x, z); ctx.rotate(-y);
     if (T.practical) {
       const col = it.on ? colorHex(lightColor(it)) : '#555';
-      if (it.on) { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, m * 0.9); g.addColorStop(0, col + '88'); g.addColorStop(1, col + '00'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, m * 0.9, 0, 7); ctx.fill(); }
+      if (it.on) { const gr = m * clamp(Math.sqrt(lumens(it) * it.dim / 100) / 45, 0.12, 0.8); const g = ctx.createRadialGradient(0, 0, 0, 0, 0, gr); g.addColorStop(0, col + '77'); g.addColorStop(1, col + '00'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, gr, 0, 7); ctx.fill(); }
       ctx.fillStyle = col; ctx.strokeStyle = sel ? '#FFB547' : C.fg; ctx.lineWidth = sel ? 3 : 1.5; ctx.beginPath(); ctx.arc(0, 0, m * (it.type === 'vela' ? 0.06 : 0.14), 0, 7); ctx.fill(); ctx.stroke();
     } else if (isLight(it)) {
       const col = it.on ? colorHex(lightColor(it)) : '#555';
@@ -127,8 +153,8 @@ export function drawPlanTo(ctx, W, theme) {
       else { const r = m * (0.14 + it.p * 0.03); ctx.beginPath(); ctx.moveTo(-r, -r * 1.3); ctx.lineTo(r, -r * 1.3); ctx.lineTo(r * 1.2, r * 0.3); ctx.lineTo(-r * 1.2, r * 0.3); ctx.closePath(); ctx.fill(); ctx.stroke(); }
     } else if (it.type === 'flag') {
       const w = FLAG_SIZES[it.size][0] * m; ctx.strokeStyle = sel ? '#FFB547' : C.flag; ctx.lineWidth = sel ? 7 : 5; ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0); ctx.stroke();
-    } else if (it.type === 'bounce') {
-      const w = 0.535 * m;
+    } else if (it.type === 'bounce' || it.type === 'butterfly') {
+      const w = (it.type === 'butterfly' ? (it.side || 2.44) / 2 * Math.cos((it.pitch || 0) * D2R) : 0.535) * m;
       if (!dark) { ctx.strokeStyle = C.fg; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(-w, 0); ctx.lineTo(w, 0); ctx.stroke(); }
       ctx.strokeStyle = sel ? '#FFB547' : it.face === 'black' ? C.fg : FACES[it.face].hex; ctx.lineWidth = sel ? 6 : 4; ctx.beginPath(); ctx.moveTo(-w, 0); ctx.lineTo(w, 0); ctx.stroke();
       ctx.strokeStyle = C.mut; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, m * 0.35); ctx.stroke();
@@ -178,7 +204,7 @@ export function drawPlanTo(ctx, W, theme) {
 }
 const labelNum = it => (S.items.indexOf(it) + 1) + '.';
 export function drawPlan() {
-  const dpr = window.devicePixelRatio || 1, W = Math.round(plan.clientWidth * dpr);
+  const dpr = Math.max(2, window.devicePixelRatio || 1), W = Math.round(plan.clientWidth * dpr);
   if (!W) return; if (plan.width !== W) { plan.width = W; plan.height = W; }
   drawPlanTo(plan.getContext('2d'), W, 'dark');
 }
@@ -196,14 +222,15 @@ plan.addEventListener('pointerdown', e => {
   updPL(); const r = plan.getBoundingClientRect(), W = r.width, px = e.clientX - r.left, py = e.clientY - r.top, m = W / (PL.x1 - PL.x0);
   let best = null, bd = 14;
   const test = (tx, tz, kind, id) => { const [ax, az] = w2p(tx, tz, W), d = Math.hypot(ax - px, az - py); if (d < bd) { bd = d; best = { kind, id }; } };
+  { const [cx, cz] = w2p(S.cam.x, S.cam.z, W); if (Math.hypot(cx - px, cz - py) < Math.max(20, m * 0.32)) { plan.setPointerCapture(e.pointerId); pdrag = { kind: 'cam' }; return; } }
   for (const it of S.items) { if (TYPES[it.type].cat === 'abertura' || TYPES[it.type].practical) continue; const y = it.yaw * D2R; test(it.x + Math.sin(y) * HANDLE, it.z + Math.cos(y) * HANDLE, 'rot', it.id); }
   S.people.forEach((P, i) => { if (!P.on) return; const r0 = P.rot * D2R; test(P.x + Math.sin(r0) * HANDLE, P.z + Math.cos(r0) * HANDLE, 'prot', i); });
-  for (const it of S.items) { if (TYPES[it.type].cat === 'abertura') { const p = openingWorld(it); test(p.x, p.z, 'move', it.id); } else if (TYPES[it.type].cat !== 'mueble') test(it.x, it.z, 'move', it.id); }
+  for (const it of S.items) { const c = TYPES[it.type].cat; if (c === 'abertura') { const p = openingWorld(it); test(p.x, p.z, 'move', it.id); } else if (c !== 'mueble' && !(c === 'grip' && it.type !== 'butterfly')) test(it.x, it.z, 'move', it.id); }
   S.people.forEach((P, i) => { if (P.on) test(P.x, P.z, 'person', i); });
   test(S.cam.x, S.cam.z, 'cam', null);
   if (!best) { // furniture by footprint
     const [wx, wz] = p2w(px, py, W);
-    for (const it of [...S.items].reverse()) { const T = TYPES[it.type]; if (T.cat !== 'mueble') continue; const a = -it.yaw * D2R, dx = wx - it.x, dz = wz - it.z, lx = dx * Math.cos(a) - dz * Math.sin(a), lz = dx * Math.sin(a) + dz * Math.cos(a); if (Math.abs(lx) < T.size[0] / 2 && Math.abs(lz) < T.size[2] / 2) { best = { kind: 'move', id: it.id }; break; } }
+    for (const it of [...S.items].reverse()) { const T = TYPES[it.type]; if (T.cat !== 'mueble' && !(T.cat === 'grip' && it.type !== 'butterfly')) continue; const f = footprint(it); if (!f) continue; const a = -(it.yaw || 0) * D2R, dx = wx - it.x, dz = wz - it.z, lx = dx * Math.cos(a) - dz * Math.sin(a), lz = dx * Math.sin(a) + dz * Math.cos(a); if (Math.abs(lx) < Math.max(f.hw, 0.15) && Math.abs(lz) < Math.max(f.hd, 0.15)) { best = { kind: 'move', id: it.id }; break; } }
   }
   if (!best) { bd = 0.4 * m; for (const it of S.items) test(it.x, it.z, 'move', it.id); }
   plan.setPointerCapture(e.pointerId);
@@ -222,15 +249,15 @@ plan.addEventListener('pointermove', e => {
   }
   if (pdrag.kind === 'person' || pdrag.kind === 'prot') {
     const P = S.people[pdrag.id];
-    if (pdrag.kind === 'person') { P.x = snap(wx); P.z = snap(wz); dragInfo = null; }
+    if (pdrag.kind === 'person') { const [nx, nz] = resolveMove(P, snap(wx), snap(wz), S.env.mode === 'interior' ? roomBounds() : null); P.x = nx; P.z = nz; dragInfo = null; }
     else P.rot = Math.round(Math.atan2(wx - P.x, wz - P.z) * R2D / 5) * 5;
     placePerson(P); emit('peopleChanged'); req(); drawPlan(); return;
   }
   if (pdrag.kind === 'cam') { S.cam.x = snap(wx); S.cam.z = snap(wz); dragInfo = { x: wx, z: wz, text: measure(wx, wz).replace(/ · .*$/, ' del personaje') }; emit('camChanged'); req(); drawPlan(); return; }
   const it = S.items.find(i => i.id === pdrag.id); if (!it) return;
   if (TYPES[it.type].cat === 'abertura') { snapOpening(it, wx, wz); }
-  else if (pdrag.kind === 'move') { it.x = snap(wx); it.z = snap(wz); dragInfo = { x: it.x, z: it.z, text: measure(it.x, it.z) }; }
-  else { it.yaw = Math.round(Math.atan2(wx - it.x, wz - it.z) * R2D); dragInfo = { x: it.x, z: it.z, text: `rotación ${it.yaw}°` }; }
+  else if (pdrag.kind === 'move') { const [nx, nz] = resolveMove(it, snap(wx), snap(wz), S.env.mode === 'interior' ? roomBounds() : null); it.x = nx; it.z = nz; dragInfo = { x: it.x, z: it.z, text: measure(it.x, it.z) }; }
+  else { const ny = Math.round(Math.atan2(wx - it.x, wz - it.z) * R2D); if (!collidesYaw(it, ny)) it.yaw = ny; dragInfo = { x: it.x, z: it.z, text: `rotación ${it.yaw}°` }; }
   syncItem(it); emit('itemMoved', it); drawPlan();
 });
 plan.addEventListener('pointerup', () => { pdrag = null; dragInfo = null; plan.style.cursor = 'default'; drawPlan(); });

@@ -8,6 +8,7 @@ import { drawPlan, plan, zoomPlan, PV } from './plan.js';
 import * as U from './ui.js';
 import { applyPreset } from './presets.js';
 import { undo, loadAutosave, scheduleAutosave } from './io.js';
+import { resolveMove } from './collide.js';
 
 /* ---------- vista Set 3D: órbita, selección y gizmo ---------- */
 const canvas = E.canvas;
@@ -18,8 +19,9 @@ let tcTarget = null;
 tc.addEventListener('objectChange', () => {
   const o = tc.object; if (!o || !tcTarget) return;
   const snap = v => Math.round(v * 20) / 20;
-  if (tcTarget.person != null) { const P = S.people[tcTarget.person]; P.x = snap(o.position.x); P.z = snap(o.position.z); o.position.y = 0; E.placePerson(P); U.syncPersonUI(); U.updateLensInfo(); }
-  else { const it = S.items.find(i => i.id === tcTarget.id); if (!it) return; it.x = snap(o.position.x); it.z = snap(o.position.z); it.y = clamp(snap(o.position.y), 0, 4.5); E.syncItem(it); U.renderProps(true); }
+  const bounds = S.env.mode === 'interior' ? E.roomBounds() : null;
+  if (tcTarget.person != null) { const P = S.people[tcTarget.person]; [P.x, P.z] = resolveMove(P, snap(o.position.x), snap(o.position.z), bounds); E.placePerson(P); U.syncPersonUI(); U.updateLensInfo(); }
+  else { const it = S.items.find(i => i.id === tcTarget.id); if (!it) return; [it.x, it.z] = resolveMove(it, snap(o.position.x), snap(o.position.z), bounds); it.y = clamp(snap(o.position.y), 0, 4.5); E.syncItem(it); U.renderProps(true); }
   drawPlan(); req();
 });
 tc.addEventListener('change', req);
@@ -78,11 +80,19 @@ $('#exitPresent').addEventListener('click', () => setPresent(false));
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && UI.present) setPresent(false); });
 $('#quality').addEventListener('change', e => { UI.quality = e.target.value; E.applyQuality(); try { localStorage.setItem('hapi-quality', UI.quality); } catch (_) {} });
 
+/* ---------- ayuda ---------- */
+const help = $('#help');
+$('#helpBtn').addEventListener('click', () => { help.hidden = false; $('#helpClose').focus(); });
+$('#helpClose').addEventListener('click', () => { help.hidden = true; });
+help.addEventListener('click', e => { if (e.target === help) help.hidden = true; });
+$('#helpTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; document.querySelectorAll('#helpTabs button').forEach(x => x.setAttribute('aria-selected', x === b)); document.querySelectorAll('[data-hp]').forEach(d => d.hidden = d.dataset.hp !== b.dataset.h); });
+
 /* ---------- teclado ---------- */
 document.addEventListener('keydown', e => {
   const ae = document.activeElement, typing = ae && (/TEXTAREA|SELECT/.test(ae.tagName) || (ae.tagName === 'INPUT' && ['text', 'number', 'color', 'search'].includes(ae.type)));
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !typing) { e.preventDefault(); undo(); return; }
-  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Escape' && !help.hidden) { help.hidden = true; return; }
+  if (typing || e.ctrlKey || e.metaKey || e.altKey || !help.hidden) return;
   const k = e.key.toLowerCase(), L = ['fish', '18', '50', '90', '135'];
   if (k >= '1' && k <= '5') U.setLens(L[+k - 1]);
   else if (k === 'v') U.setView(UI.view === 'monitor' ? 'set' : 'monitor');
@@ -106,7 +116,7 @@ E.applyQuality();
 E.buildEnvironment(); E.buildPeople();
 let restored = false;
 try { restored = loadAutosave(); } catch (_) { restored = false; }
-if (!restored) applyPreset('estudio', 'Tres puntos');
+if (!restored) applyPreset('estudio', 'Vacío');
 else toast('Se recuperó tu última escena. Para empezar de nuevo, elegí un esquema en la pestaña Escena.');
 let tab = 'escena'; try { tab = localStorage.getItem('hapi-tab') || 'escena'; } catch (_) {}
 U.setTab(tab); U.setView('monitor'); U.syncScenePanel(); U.syncCamUI(); U.renderItems(); U.renderProps(); U.refreshMove();

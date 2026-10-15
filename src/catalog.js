@@ -25,6 +25,18 @@ export const TYPES = {
   // control
   flag: { cat: 'control', name: 'Bandera', desc: 'Tela negra en un marco sobre un C-stand. Bloquea la luz: cuanto más cerca del sujeto, más definido el corte.' },
   bounce: { cat: 'control', name: 'Rebote 5 en 1', desc: 'Aro de 107 cm. Blanco rebota suave, plata más brillante, oro cálido, negro resta luz y difusión ablanda lo que pasa a través.' },
+  // gripería
+  riel: { cat: 'grip', name: 'Riel de travelling', desc: 'Vías para el carro (dolly). Se arma en tramos de 1,2 m. El carro rueda sobre el riel para hacer travellings suaves.' },
+  dolly: { cat: 'grip', name: 'Carro (dolly)', desc: 'Carro de cámara con columna. Sobre riel o ruedas de piso, permite travellings y dolly in/out.' },
+  jib: { cat: 'grip', name: 'Jimmy jib / grúa', desc: 'Brazo telescópico con cabeza remota. Permite subidas, bajadas y barridos de cámara por encima del set.' },
+  slider: { cat: 'grip', name: 'Slider', desc: 'Riel corto (1,2 m) sobre trípodes para movimientos suaves y cortos.' },
+  steadicam: { cat: 'grip', name: 'Steadicam / gimbal', desc: 'Operador con estabilizador: cámara en mano fluida, sin riel.' },
+  tripode: { cat: 'grip', name: 'Trípode de cámara', desc: 'Trípode con cabezal fluido. Sirve para marcar una segunda posición de cámara.' },
+  butterfly: { cat: 'grip', name: 'Butterfly', desc: 'Marco grande con tela: seda (difusión), negro o griffolyn blanco. Se usa sobre el actor para suavizar el sol, o como rebote o bandera gigante.' },
+  applebox: { cat: 'grip', name: 'Cajón de manzana', desc: 'Cajón de madera para levantar actores, muebles o equipos. Completo, medio, cuarto o pancake.' },
+  tarima: { cat: 'grip', name: 'Praticable / tarima', desc: 'Plataforma para elevar actores o cámara.' },
+  escalera: { cat: 'grip', name: 'Escalera de tijera', desc: 'Para acceder a equipos altos o para planos picados.' },
+  bolsa: { cat: 'grip', name: 'Bolsa de arena', desc: 'Contrapeso para asegurar pies de luz y C-stands. Siempre en la pata del lado de la carga.' },
   // mobiliario
   mesa: { cat: 'mueble', name: 'Mesa', size: [1.4, 0.75, 0.8], desc: 'Mesa de 140 × 80 cm.' },
   silla: { cat: 'mueble', name: 'Silla', size: [0.45, 0.9, 0.5], desc: 'Silla de madera.' },
@@ -43,6 +55,9 @@ export const BULBS = {
   vela: { label: 'Vela', options: [[0, 12]] },
 };
 
+export const BUTTERFLY_SIZES = { 6: 1.83, 8: 2.44, 12: 3.66 };
+export const BUTTERFLY_FACES = { diff: 'Seda (difusión)', black: 'Negro', white: 'Griffolyn blanco' };
+export const APPLE = { full: [0.51, 0.2, 0.3, 'Completo'], half: [0.51, 0.1, 0.3, 'Medio'], quarter: [0.51, 0.05, 0.3, 'Cuarto'], pancake: [0.51, 0.025, 0.3, 'Pancake'] };
 export const FLAG_SIZES = { '45x60': [0.45, 0.6], '60x90': [0.6, 0.9], '120x120': [1.2, 1.2] };
 export const DIFF = { none: { f: 1, r: 0, a: 0, label: 'Sin difusión' }, q: { f: 0.85, r: 5, a: 4, label: '1/4' }, h: { f: 0.7, r: 9, a: 8, label: '1/2' }, full: { f: 0.5, r: 14, a: 14, label: 'Completa' }, box: { f: 0.42, r: 20, a: 22, label: 'Softbox' } };
 export const GRID = { none: 0, 90: 90, 60: 60, 40: 40 };

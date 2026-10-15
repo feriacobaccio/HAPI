@@ -169,3 +169,58 @@ export function buildFurniture(it, root) {
     for (const s of [-1, 1]) root.add(mesh(box(0.55, 0.12, 0.35), std('#f2f0ea', { roughness: 0.95 }), s * 0.33, 0.58, -0.72));
   }
 }
+
+// Gripería (origen en el piso, frente hacia +z)
+const GRIP = { metal: std('#8d9096', { roughness: 0.35, metalness: 0.8 }), black: std('#1d1d21', { roughness: 0.6, metalness: 0.3 }), wood: std('#b08a5a', { roughness: 0.8 }), rubber: std('#151515', { roughness: 0.9 }) };
+export function buildGrip(it, root, head) {
+  const M = GRIP;
+  if (it.type === 'riel') {
+    const L = it.len || 3.6;
+    for (const s of [-1, 1]) { const r = mesh(cyl(0.02, 0.02, L, 10), M.metal, s * 0.31, 0.05, 0); r.rotation.x = Math.PI / 2; root.add(r); }
+    for (let z = -L / 2 + 0.15; z <= L / 2 - 0.1; z += 0.6) root.add(mesh(box(0.75, 0.03, 0.08), M.wood, 0, 0.015, z));
+  } else if (it.type === 'dolly') {
+    root.add(mesh(box(0.75, 0.12, 1.1), M.black, 0, 0.14, 0));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const w = mesh(cyl(0.06, 0.06, 0.05, 14), M.rubber, sx * 0.31, 0.07, sz * 0.42); w.rotation.z = Math.PI / 2; root.add(w); }
+    root.add(mesh(cyl(0.06, 0.07, 0.7, 12), M.metal, 0, 0.55, 0.25));
+    root.add(mesh(box(0.35, 0.05, 0.25), M.black, 0, 0.92, 0.25));
+    root.add(mesh(box(0.5, 0.06, 0.3), M.black, 0, 0.23, -0.35));
+  } else if (it.type === 'jib') {
+    const L = it.len || 4.5, a = (it.arm || 15) * Math.PI / 180;
+    for (let i = 0; i < 3; i++) { const t = i * 2.094, l = mesh(box(0.05, 0.05, 1.0), M.black, Math.sin(t) * 0.4, 0.45, Math.cos(t) * 0.4); l.rotation.y = t; l.rotation.x = 0.55; root.add(l); }
+    root.add(mesh(cyl(0.06, 0.06, 1.2, 10), M.black, 0, 0.6, 0));
+    const pivot = new THREE.Group(); pivot.position.y = 1.25; pivot.rotation.x = -a; root.add(pivot);
+    const arm = mesh(box(0.12, 0.14, L + 1.2), M.metal, 0, 0, L / 2 - 0.6); pivot.add(arm);
+    pivot.add(mesh(box(0.3, 0.3, 0.4), M.black, 0, -0.1, -1.0));
+    const cam = mesh(box(0.16, 0.16, 0.25), M.black, 0, -0.18, L); pivot.add(cam);
+  } else if (it.type === 'slider') {
+    for (const z of [-0.6, 0.6]) { for (let i = 0; i < 3; i++) { const t = i * 2.094, l = mesh(box(0.025, 0.025, 1.0), M.black, Math.sin(t) * 0.18, 0.45, z + Math.cos(t) * 0.18); l.rotation.y = t; l.rotation.x = 0.2; root.add(l); } }
+    for (const s of [-1, 1]) { const r = mesh(cyl(0.015, 0.015, 1.3, 8), M.metal, s * 0.05, 0.92, 0); r.rotation.x = Math.PI / 2; root.add(r); }
+    root.add(mesh(box(0.15, 0.05, 0.15), M.black, 0, 0.96, 0));
+  } else if (it.type === 'steadicam') {
+    root.add(mesh(cyl(0.16, 0.13, 0.75, 14), M.black, 0, 1.15, 0, 1, 1, 0.7));
+    root.add(mesh(new THREE.SphereGeometry(0.11, 14, 10), M.black, 0, 1.65, 0));
+    for (const s of [-1, 1]) root.add(mesh(cyl(0.07, 0.06, 0.8, 10), M.black, s * 0.1, 0.4, 0));
+    const armV = mesh(box(0.05, 0.05, 0.5), M.metal, 0.22, 1.1, 0.25); root.add(armV);
+    root.add(mesh(cyl(0.015, 0.015, 0.7, 8), M.metal, 0.22, 1.0, 0.5));
+    root.add(mesh(box(0.14, 0.14, 0.24), M.black, 0.22, 1.38, 0.5));
+  } else if (it.type === 'tripode') {
+    for (let i = 0; i < 3; i++) { const t = i * 2.094, l = mesh(box(0.03, 0.03, 1.45), M.black, Math.sin(t) * 0.28, 0.7, Math.cos(t) * 0.28); l.rotation.y = t; l.rotation.x = 0.4; root.add(l); }
+    root.add(mesh(box(0.14, 0.12, 0.14), M.black, 0, 1.4, 0));
+    root.add(mesh(box(0.15, 0.14, 0.24), M.black, 0, 1.53, 0));
+    const ln = mesh(cyl(0.04, 0.045, 0.12, 12), M.rubber, 0, 1.53, 0.17); ln.rotation.x = Math.PI / 2; root.add(ln);
+  } else if (it.type === 'applebox') {
+    const [w, h, d] = { full: [0.51, 0.2, 0.3], half: [0.51, 0.1, 0.3], quarter: [0.51, 0.05, 0.3], pancake: [0.51, 0.025, 0.3] }[it.size || 'full'];
+    for (let i = 0; i < (it.count || 1); i++) root.add(mesh(box(w, h, d), M.wood, 0, h / 2 + i * h, 0));
+  } else if (it.type === 'tarima') {
+    const h = it.h || 0.4; root.add(mesh(box(1.2, h, 2.4), M.wood, 0, h / 2, 0));
+  } else if (it.type === 'escalera') {
+    for (const s of [-1, 1]) for (const x of [-0.22, 0.22]) { const l = mesh(box(0.04, 1.85, 0.04), M.metal, x, 0.9, s * 0.3); l.rotation.x = s * 0.18; root.add(l); }
+    for (let i = 1; i < 6; i++) root.add(mesh(box(0.44, 0.03, 0.1), M.metal, 0, i * 0.3, 0.3 - i * 0.05));
+  } else if (it.type === 'bolsa') {
+    root.add(mesh(new THREE.SphereGeometry(0.14, 12, 8), std('#5c5a3a', { roughness: 1 }), 0, 0.07, 0, 1.6, 0.5, 1));
+  } else if (it.type === 'butterfly') {
+    const s = it.side || 2.44, F = FACES[it.face] || FACES.diff, mat = it.face === 'diff' ? new THREE.MeshStandardMaterial({ color: '#f4f4f6', transparent: true, opacity: 0.55, side: THREE.DoubleSide, roughness: 1 }) : new THREE.MeshStandardMaterial({ color: F.hex, roughness: 0.95, side: THREE.DoubleSide });
+    head.add(mesh(new THREE.PlaneGeometry(s, s), mat));
+    for (const [x, y, w, h] of [[0, s / 2, s, 0.04], [0, -s / 2, s, 0.04], [s / 2, 0, 0.04, s], [-s / 2, 0, 0.04, s]]) head.add(mesh(box(w, h, 0.04), GRIP.metal, x, y, 0));
+  }
+}

@@ -26,8 +26,9 @@
       <button class="btn" id="dlPlan">Planta JPG</button>
       <button class="btn" id="dlShot">Plano de referencia JPG</button>
       <button class="btn" id="present" title="Modo presentación (P)">Presentar</button>
-      <label class="note" for="quality">Calidad</label>
-      <select id="quality" class="sel"><option value="baja">Baja</option><option value="media" selected>Media</option><option value="alta">Alta</option></select>
+      <label class="note" for="quality" title="Calidad de imagen en pantalla: resolución, sombras y desenfoque. Bajala si la computadora va lenta.">Calidad</label>
+      <select id="quality" class="sel" title="Calidad de imagen en pantalla: resolución, sombras y desenfoque. Bajala si la computadora va lenta."><option value="baja">Baja</option><option value="media" selected>Media</option><option value="alta">Alta</option></select>
+      <button class="btn" id="helpBtn" aria-haspopup="dialog">Ayuda</button>
     </div>
   </header>
 
@@ -38,6 +39,7 @@
         <button role="tab" data-tab="escena" aria-selected="true">Escena</button>
         <button role="tab" data-tab="personajes" aria-selected="false">Personajes</button>
         <button role="tab" data-tab="equipos" aria-selected="false">Equipos</button>
+        <button role="tab" data-tab="grip" aria-selected="false">Gripería</button>
         <button role="tab" data-tab="camara" aria-selected="false">Cámara</button>
       </nav>
 
@@ -45,7 +47,7 @@
         <div class="panel">
           <h2>Tipo de escena</h2>
           <div class="seg wide" id="envMode"><button data-m="estudio">Estudio</button><button data-m="interior">Interior</button><button data-m="exterior">Exterior</button></div>
-          <div class="presets" id="presets"></div>
+          <p class="note">¿Querés ver un ejemplo armado? Están en <b>Ayuda → Esquemas de ejemplo</b>.</p>
         </div>
         <div class="panel" data-for="estudio">
           <h2>Fondo de estudio</h2>
@@ -77,7 +79,8 @@
           <p class="note">Posición aproximada del sol para planificar a qué hora grabar. La brújula de la planta muestra el norte y de dónde viene el sol.</p>
         </div>
         <div class="panel">
-          <div class="f"><label for="amb">Luz ambiente extra</label><input type="range" id="amb" min="0" max="60" step="1"><output id="ambV"></output></div>
+          <div class="f"><label for="amb">Rebote general</label><input type="range" id="amb" min="0" max="60" step="0.5"><output id="ambV"></output></div>
+          <p class="note">Luz pareja que llega de todos lados: lo que rebota en paredes, techo y piso del lugar, o las luces de trabajo de un estudio. No es un equipo. En 0, solo ilumina lo que ponés vos (y el sol o las ventanas).</p>
         </div>
         <div class="panel">
           <h2>Mobiliario</h2>
@@ -113,6 +116,14 @@
         </div>
       </section>
 
+      <section class="tabpanel" data-panel="grip" hidden>
+        <div class="panel">
+          <h2>Gripería</h2>
+          <div class="lib" id="libGrip"></div>
+          <p class="note">Tocá para agregar, o arrastrá a la planta. El riel y el carro también se pueden generar desde <b>Cámara → Movimiento A → B</b>.</p>
+        </div>
+      </section>
+
       <section class="tabpanel" data-panel="camara" hidden>
         <div class="panel">
           <h2>Lente · sensor 35 mm</h2>
@@ -128,6 +139,9 @@
           <h2>Exposición</h2>
           <div class="f"><label for="iris">Diafragma</label><input type="range" id="iris" min="0" max="8" step="1"><output id="irisV"></output></div>
           <div class="f"><label for="iso">ISO</label><input type="range" id="iso" min="0" max="7" step="1"><output id="isoV"></output></div>
+          <div class="f"><span>Obturador</span><div class="seg" id="shutter"><button data-sh="45">45°</button><button data-sh="90">90°</button><button data-sh="172.8">172,8°</button><button data-sh="180">180°</button><button data-sh="270">270°</button><button data-sh="360">360°</button></div></div>
+          <div class="f"><span>Cuadros/s</span><div class="seg" id="fps"><button data-fps="24">24</button><button data-fps="25">25</button><button data-fps="30">30</button><button data-fps="48">48</button><button data-fps="60">60</button></div></div>
+          <p class="note"><span id="shutterV"></span> de exposición por cuadro. 180° es el estándar de cine; menos ángulo da menos luz y movimientos más cortados, más ángulo da más luz y más estela.</p>
           <div class="f"><span>Filtro ND</span><div class="seg" id="nd"><button data-nd="0">Sin ND</button><button data-nd="0.3">0.3</button><button data-nd="0.6">0.6</button><button data-nd="0.9">0.9</button><button data-nd="1.2">1.2</button><button data-nd="1.8">1.8</button></div></div>
           <div class="row"><button class="btn" id="meter">Medir en el rostro</button><span class="note" id="meterV">Ajusta el diafragma según la luz que llega a la cara.</span></div>
           <div class="f"><label for="wb">Balance</label><input type="range" id="wb" min="3000" max="10000" step="100"><output id="wbV"></output></div>
@@ -144,6 +158,7 @@
           <p class="note">Ubicá la cámara en el inicio y guardala como A; movela al final y guardala como B.</p>
           <div class="row"><button class="btn" id="saveA">Guardar A</button><button class="btn" id="saveB">Guardar B</button><button class="btn" id="goA" disabled>Ver A</button><button class="btn" id="goB" disabled>Ver B</button></div>
           <div class="row"><button class="btn primary" id="playMove" disabled>Reproducir</button><button class="btn" id="dlAB" disabled>Cuadros A y B JPG</button><button class="btn" id="clearAB" disabled>Borrar</button></div>
+          <div class="row"><button class="btn" id="railAB" disabled>Agregar riel y carro entre A y B</button></div>
           <p class="lensinfo" id="moveinfo"></p>
         </div>
       </section>
@@ -161,7 +176,7 @@
           <div class="hud" id="hud">
             <div class="thirds" id="thirds"></div><div class="frame"></div>
             <div class="tl"><span class="rec">● REC</span><span id="hLens"></span><span id="hT"></span><span id="hIso" class="opt"></span></div>
-            <div class="tr"><span id="hFocus"></span><span id="hWb"></span><span class="opt">24 fps</span></div>
+            <div class="tr"><span id="hFocus"></span><span id="hWb"></span><span class="opt" id="hFps"></span></div>
             <div class="bl"><span id="hCam"></span></div>
             <div class="br"><span id="hTime"></span></div>
             <div class="blk" id="blk"></div>
@@ -192,6 +207,23 @@
   </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div class="modal" id="help" hidden role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="modal-box">
+    <div class="row" style="justify-content:space-between"><h2 id="helpTitle" style="font-size:15px;color:var(--fg)">Ayuda</h2><button class="btn" id="helpClose">Cerrar</button></div>
+    <nav class="tabs" id="helpTabs" style="position:static;grid-template-columns:repeat(3,1fr)"><button data-h="ej" aria-selected="true">Esquemas de ejemplo</button><button data-h="atajos" aria-selected="false">Atajos y uso</button><button data-h="acerca" aria-selected="false">Acerca de</button></nav>
+    <div data-hp="ej"><p class="note">Cargar un esquema reemplaza la escena actual (podés deshacerlo con Ctrl+Z).</p><div id="presets"></div></div>
+    <div data-hp="atajos" hidden>
+      <ul class="helplist">
+        <li><b>V</b> cambia entre Monitor y Set 3D · <b>1–5</b> cambian de lente · <b>P</b> modo presentación · <b>Supr</b> quita el elemento seleccionado · <b>Ctrl+Z</b> deshace el último paso.</li>
+        <li><b>Planta:</b> arrastrá un elemento para moverlo, el punto blanco para girarlo, el fondo para desplazar la vista y la rueda para acercar. La cámara se toma desde su ícono.</li>
+        <li><b>Set 3D:</b> arrastrá para girar, clic derecho o Shift para desplazar, rueda para acercar. Clic en un objeto para seleccionarlo y moverlo con las flechas.</li>
+        <li><b>Calidad:</b> cambia la resolución en pantalla, el detalle de las sombras y del desenfoque. Si la computadora va lenta, usá Baja. Las descargas JPG se hacen siempre en 1920 × 1080.</li>
+        <li><b>Colisiones:</b> los objetos no se atraviesan entre sí. Un personaje sí puede sentarse en una silla o subirse a una tarima, y el carro va sobre el riel.</li>
+      </ul>
+    </div>
+    <div data-hp="acerca" hidden><p class="note">HAPI — Herramienta de Armado de Plantas de Iluminación. Software libre (licencia MIT) para enseñar y planificar la iluminación de una escena. Es una aproximación visual: parte de valores reales, pero no reemplaza a un fotómetro ni a una prueba de cámara.</p></div>
+  </div>
+</div>
 <div id="dragGhost" hidden></div>
 <script type="module" src="./src/main.js"></script>
 </body>

@@ -11,7 +11,7 @@ function base(mode, cam, person) {
   S.env.mode = mode; PV.custom = false;
   Object.assign(S.people[0], { x: 0, z: 0, rot: 0, pose: 'sentado' }, person || {}); S.people[1].on = false; UI.selPerson = 0; UI.sel = null;
   Object.assign(S.cam, { x: 0, z: 3.4, lens: '50', h: 'normal', a: 'normal', tilt: 0, hOff: 0, T: 2, iso: 3, nd: 0, frame: 'p1', fm: 'p1', wb: 5600 }, cam || {});
-  S.move.A = S.move.B = null;
+  S.move.A = S.move.B = null; S.env.amb = mode === 'estudio' ? 1 : 0;
 }
 function aimPt(it, x, y, z) { E.aimAt(it, x, y, z); E.syncItem(it); }
 export const PRESETS = {
@@ -91,8 +91,8 @@ export function applyPreset(mode, name) {
   PRESETS[mode][name]();
   syncScenePanel(); syncCamUI(); renderItems(); renderProps(); meterFace(true); refreshMove(); drawPlan(); req();
 }
+const MODE_NAME = { estudio: 'Estudio', interior: 'Interior', exterior: 'Exterior' };
 export function renderPresets() {
-  const box = $('#presets'); const m = S.env.mode;
-  box.innerHTML = '<span class="note" style="width:100%">Esquemas de ejemplo:</span>' + Object.keys(PRESETS[m]).map(n => `<button data-p="${n}">${n}</button>`).join('');
+  $('#presets').innerHTML = Object.keys(PRESETS).map(m => `<div class="preset-group"><h3>${MODE_NAME[m]}</h3><div class="presets">${Object.keys(PRESETS[m]).map(n => `<button data-mode="${m}" data-p="${n}">${n}</button>`).join('')}</div></div>`).join('');
 }
-$('#presets').addEventListener('click', e => { const b = e.target.closest('button[data-p]'); if (!b) return; applyPreset(S.env.mode, b.dataset.p); toast('Esquema cargado: ' + b.dataset.p + '.'); });
+$('#presets').addEventListener('click', e => { const b = e.target.closest('button[data-p]'); if (!b) return; applyPreset(b.dataset.mode, b.dataset.p); $('#help').hidden = true; toast('Esquema cargado: ' + b.dataset.p + '.'); });

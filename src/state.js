@@ -23,14 +23,14 @@ export function defaultState() {
       room: { w: 7, d: 6, h: 2.7, wall: '#cdc6ba', floor: '#6e5a48' },
       ext: { kind: 'abierto' },
       time: { hour: 14, month: t.month, day: t.day, city: 'bsas', lat: -34.6, lon: -58.38, tz: -3, north: 0 },
-      amb: 4,
+      amb: 1,
     },
     items: [],
     people: [
       { x: 0, z: 0, pose: 'sentado', rot: 0, skin: 2, on: true },
       { x: 0.9, z: -0.5, pose: 'pie', rot: 0, skin: 4, on: false },
     ],
-    cam: { x: 0, z: 3.4, h: 'normal', a: 'normal', tilt: 0, hOff: 0, lens: '50', T: 2, iso: 3, wb: 5600, nd: 0, frame: 'p1', dof: true, fm: 'p1', focus: 3.4 },
+    cam: { x: 0, z: 3.4, h: 'normal', a: 'normal', tilt: 0, hOff: 0, lens: '50', T: 2, iso: 3, wb: 5600, nd: 0, frame: 'p1', dof: true, fm: 'p1', focus: 3.4, shutter: 180, fps: 24 },
     move: { A: null, B: null },
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "hapi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "HAPI — Herramienta de Armado de Plantas de Iluminación. Software libre para enseñar y diseñar iluminación de cine.",
   "scripts": {
     "dev": "vite",
