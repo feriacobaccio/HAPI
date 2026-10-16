@@ -156,3 +156,19 @@ body.present .stage{height:100%;aspect-ratio:auto;border-radius:0;border:0}
 .helplist b{color:var(--fg)}
 .tabs{grid-template-columns:repeat(5,1fr)}
 .tabs button{font-size:12.5px;padding:8px 2px}
+
+/* identidad por pestaña: cada una toma el color de un filtro de luz */
+#tabs [data-tab="escena"],.tabpanel[data-panel="escena"]{--accent:#B39DFF}
+#tabs [data-tab="personajes"],.tabpanel[data-panel="personajes"]{--accent:#FF8FA8}
+#tabs [data-tab="equipos"],.tabpanel[data-panel="equipos"]{--accent:#FFB547}
+#tabs [data-tab="grip"],.tabpanel[data-panel="grip"]{--accent:#5ED9BE}
+#tabs [data-tab="camara"],.tabpanel[data-panel="camara"]{--accent:#7CC7FF}
+.tabpanel{--accent-dim:color-mix(in srgb,var(--accent) 22%,transparent)}
+#tabs button{position:relative;transition:color .15s,background .15s}
+#tabs button::after{content:"";position:absolute;left:22%;right:22%;bottom:3px;height:2px;border-radius:2px;background:var(--accent);opacity:.35;transition:opacity .15s,left .15s,right .15s}
+#tabs button:hover{color:var(--fg)}
+#tabs button:hover::after{opacity:.7}
+#tabs button[aria-selected="true"]{background:color-mix(in srgb,var(--accent) 16%,var(--panel-2));color:var(--accent);box-shadow:none}
+#tabs button[aria-selected="true"]::after{opacity:1;left:12%;right:12%}
+.tabpanel .panel{border-color:color-mix(in srgb,var(--accent) 18%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 6%,var(--panel)),var(--panel) 90px);box-shadow:inset 0 2px 0 color-mix(in srgb,var(--accent) 55%,transparent)}
+.tabpanel .panel h2{color:color-mix(in srgb,var(--accent) 65%,var(--muted))}

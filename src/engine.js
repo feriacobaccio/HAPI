@@ -18,7 +18,10 @@ export function kelvinRGB(k) {
 const lin = c => Math.pow(c, 2.2);
 export const hexRGB = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 export const isBlack = h => Math.max(...hexRGB(h)) < 0.02;
-function wbBalance(c) { const w = kelvinRGB(S.cam.wb).map(lin); c = c.map((v, i) => v / w[i]); const m = Math.max(...c); return m > 1e-6 ? c.map(v => v / m) : [0, 0, 0]; }
+// balance de blancos activo: el de la cámara, salvo durante el pase de la vista Set (adaptación propia)
+let wbOverride = null;
+const curWB = () => wbOverride ?? S.cam.wb;
+function wbBalance(c) { const w = kelvinRGB(curWB()).map(lin); c = c.map((v, i) => v / w[i]); const m = Math.max(...c); return m > 1e-6 ? c.map(v => v / m) : [0, 0, 0]; }
 export function kelvinColor(k) { return wbBalance(kelvinRGB(k).map(lin)); }
 export function lightColor(it) {
   const T = TYPES[it.type];
@@ -304,11 +307,13 @@ export function syncItem(it) {
   o.head.rotation.x = ((T.cat === 'luz' || T.cat === 'control') && !(it.type === 'tube' && it.orient === 'v')) || it.type === 'butterfly' ? -it.pitch * D2R : 0;
   if (o.leaves.t) { const b = it.barn; o.leaves.t.rotation.x = b.t * D2R; o.leaves.b.rotation.x = -b.b * D2R; o.leaves.l.rotation.y = b.l * D2R; o.leaves.r.rotation.y = -b.r * D2R; }
   if (o.diffPlane) { o.diffPlane.visible = it.diff !== 'none'; const s = it.diff === 'box' ? 1.4 : 1; o.diffPlane.scale.set(s, s, 1); o.diffPlane.material.opacity = it.diff === 'box' ? 0.8 : 0.3; }
-  if (isLight(it) && o.emissive) {
-    const c = lightColor(it), col = new THREE.Color(c[0], c[1], c[2]);
-    o.emissive.color.copy(it.on ? col.multiplyScalar(T.practical ? 2.5 : 1.4) : new THREE.Color('#222'));
-  }
+  refreshEmissive(it);
   req();
+}
+function refreshEmissive(it) {
+  const o = it.obj, T = TYPES[it.type]; if (!o || !isLight(it) || !o.emissive) return;
+  const c = lightColor(it), col = new THREE.Color(c[0], c[1], c[2]);
+  o.emissive.color.copy(it.on ? col.multiplyScalar(T.practical ? 2.5 : 1.4) : new THREE.Color('#222'));
 }
 export function aimAt(it, x, y, z) { const dx = x - it.x, dz = z - it.z, dy = y - it.y; it.yaw = Math.atan2(dx, dz) * R2D; it.pitch = Math.atan2(dy, Math.hypot(dx, dz)) * R2D; }
 
@@ -358,7 +363,7 @@ export function updateLights() {
     const sd = sunDirection(), dl = daylight(sd.elev); Object.assign(nat, { elev: sd.elev, az: sd.az, sunLux: dl.sunLux, skyLux: dl.skyLux });
     sun.position.copy(sd.dir).multiplyScalar(60); sun.target.position.set(0, 0, 0);
     sun.intensity = dl.sunLux; const sc = kelvinColor(dl.sunK); sun.color.setRGB(...sc); sun.visible = dl.sunLux > 0;
-    const skc = kelvinColor(dl.skyK), cols = skyColors(sd.elev), wb = kelvinRGB(S.cam.wb).map(lin), wmax = Math.max(...wb.map(v => 1 / v));
+    const skc = kelvinColor(dl.skyK), cols = skyColors(sd.elev), wb = kelvinRGB(curWB()).map(lin), wmax = Math.max(...wb.map(v => 1 / v));
     const fix = c => c.map((v, i) => v / wb[i] / wmax);
     const Lsky = dl.skyLux / Math.PI * 1.15;
     skyMat.uniforms.hz.value.set(...fix(cols.hz).map(v => v * Lsky)); skyMat.uniforms.ze.value.set(...fix(cols.ze).map(v => v * Lsky * 0.9));
@@ -387,7 +392,7 @@ export function updateLights() {
   for (const it of S.items) {
     if (!isLight(it) || !it.obj) continue;
     const L = it.obj.main, T = TYPES[it.type], c = lightColor(it);
-    L.color.setRGB(c[0], c[1], c[2]); L.intensity = candela(it); L.visible = it.on;
+    L.color.setRGB(c[0], c[1], c[2]); L.intensity = candela(it); L.visible = it.on; refreshEmissive(it);
     L.shadow.radius = softness(it);
     if (L.isSpotLight) { L.angle = beamHalf(it); L.penumbra = T.hard && (!it.diff || it.diff === 'none') ? 0.25 : 1; }
     if (T.practical && it.obj.shade) {
@@ -539,9 +544,34 @@ export function renderMonitor(x, y, w, h) {
     renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h); renderer.render(dofScene, quadCam);
   }
 }
-export function renderSet(x, y, w, h) {
-  renderer.toneMappingExposure = exposure() * 1.3;
-  const keep = hemi.intensity; hemi.intensity = keep + 30 * TSTOPS[S.cam.T] ** 2 / 7.84 * (800 / ISOS[S.cam.iso]) * Math.pow(2, S.cam.nd / 0.3);
+// La vista Set no usa los ajustes de cámara (diafragma, ISO, ND, obturador, balance de blancos):
+// se adapta sola a la luz que llega al personaje, como tus ojos al entrar al set.
+function lightKelvin(it) { const T = TYPES[it.type]; return it.gel && it.gel !== 'none' ? GEL[it.gel].k : (T.kelvin || it.k || 2700); }
+export function setAdapt() {
+  const H = S.people[0]._head; let lux = ambientLux(), mired = 0, wsum = 0;
+  const add = (E, k) => { if (E > 0 && k) { mired += E * 1e6 / k; wsum += E; } };
+  for (const it of S.items) {
+    if (!isLight(it) || !it.on || !it.obj) continue;
+    const E = illum(it, H); lux += E;
+    if (!((it.type === 'tube' || it.type === 'panel') && it.mode === 'rgb')) add(E, lightKelvin(it));
+  }
+  if (S.env.mode !== 'estudio') {
+    const dl = daylight(nat.elev);
+    add(ambientLux(), dl.skyK);
+    for (const L of env.windowLights) {
+      const o = L.userData.op, n = roomWalls()[o.wall].n, to = H.clone().sub(L.position), d2 = Math.max(0.5, to.lengthSq()); to.normalize();
+      const Ew = L.intensity * L.width * L.height * Math.max(0, n[0] * to.x + n[1] * to.z) / d2; lux += Ew; add(Ew, dl.skyK);
+    }
+    if (S.env.mode === 'exterior' && sun.visible) { const y = Math.max(0, sunDirection().dir.y), Es = sun.intensity * Math.max(y, 0.7 * Math.sqrt(1 - y * y)); lux += Es; add(Es, dl.sunK); }
+  }
+  // adaptación parcial, como el ojo: una luz cálida se sigue viendo algo cálida
+  const m = wsum > 0 ? 0.65 * (mired / wsum) + 0.35 * (1e6 / 5600) : 1e6 / 5600;
+  return { lux: Math.max(lux, 60), wb: clamp(1e6 / m, 2000, 10000) };
+}
+const SET_K = 14; // calibrado con los esquemas de ejemplo: el personaje queda algo más claro que en el monitor
+export function renderSet(x, y, w, h, A) {
+  renderer.toneMappingExposure = SET_K / A;
+  const keep = hemi.intensity; hemi.intensity = keep + 0.42 * A / SET_K; // relleno para ver el set aunque esté oscuro
   if (gizmo.helper) gizmo.helper.visible = UI.view === 'set';
   setCam.aspect = w / h; setCam.updateProjectionMatrix();
   renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h);
@@ -552,12 +582,17 @@ export const layout = { mon: { x: 0, y: 0, w: 1, h: 1 }, pip: { x: 0, y: 0, w: 1
 export function fit169(w, h) { let mw = w, mh = w * 9 / 16; if (mh > h) { mh = h; mw = h * 16 / 9; } return { x: (w - mw) / 2, y: (h - mh) / 2, w: mw, h: mh }; }
 export function render() {
   const { w, h } = sizeCanvas();
-  updateLights(); placeCam(); placeSetCam();
+  placeCam(); placeSetCam();
   renderer.setScissorTest(true); renderer.setViewport(0, 0, w, h); renderer.setScissor(0, 0, w, h); renderer.setClearColor('#050407'); renderer.clear();
   renderer.shadowMap.needsUpdate = true;
   const mon = fit169(w, h), pipW = Math.min(w * 0.3, 360), pipH = pipW * 9 / 16, px = w - pipW - 10, py = 10;
-  if (UI.view === 'monitor') { renderMonitor(mon.x, h - mon.y - mon.h, mon.w, mon.h); if (UI.pip) renderSet(px, py, pipW, pipH); }
-  else { renderSet(0, 0, w, h); if (UI.pip) renderMonitor(px, py, pipW, pipH); }
+  let fresh = false;
+  const monitorPass = (...a) => { wbOverride = null; updateLights(); fresh = true; renderMonitor(...a); };
+  const setPass = (...a) => { if (!fresh) { wbOverride = null; updateLights(); } const ad = setAdapt(); wbOverride = ad.wb; updateLights(); fresh = false; renderSet(...a, ad.lux); };
+  try {
+    if (UI.view === 'monitor') { monitorPass(mon.x, h - mon.y - mon.h, mon.w, mon.h); if (UI.pip) setPass(px, py, pipW, pipH); }
+    else { setPass(0, 0, w, h); if (UI.pip) monitorPass(px, py, pipW, pipH); }
+  } finally { wbOverride = null; }
   renderer.setScissorTest(false);
   layout.mon = mon; layout.pip = { x: px, y: h - py - pipH, w: pipW, h: pipH }; layout.w = w; layout.h = h;
 }
