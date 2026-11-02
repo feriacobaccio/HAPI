@@ -9,7 +9,8 @@ const P1 = () => S.people[0];
 function base(mode, cam, person) {
   S.items.slice().forEach(it => E.removeItemObj(it)); S.items.length = 0;
   S.env.mode = mode; PV.custom = false;
-  Object.assign(S.people[0], { x: 0, z: 0, rot: 0, pose: 'sentado' }, person || {}); S.people[1].on = false; UI.selPerson = 0; UI.sel = null;
+  Object.assign(S.people[0], { x: 0, z: 0, rot: 0, pose: 'sentado' }, person || {}); S.people.forEach((P, i) => { if (i) P.on = false; delete P.seat; }); UI.selPerson = 0; UI.sel = null;
+  S.cams.splice(1); UI.cam = 0;
   Object.assign(S.cam, { x: 0, z: 3.4, lens: '50', h: 'normal', a: 'normal', tilt: 0, hOff: 0, T: 2, iso: 3, nd: 0, frame: 'p1', fm: 'p1', wb: 5600 }, cam || {});
   S.move.A = S.move.B = null; S.env.amb = mode === 'estudio' ? 1 : 0;
 }
@@ -86,12 +87,29 @@ export const PRESETS = {
     },
     'Vacío': () => { base('exterior', { iso: 0 }, { pose: 'pie' }); E.buildEnvironment(); E.buildPeople(); },
   },
+  auto: {
+    'Manejando de día': () => {
+      base('auto', { x: 0.4, z: 3.6, lens: '50', iso: 0, nd: 0.6 }); S.env.ext.kind = 'calle';
+      const t = S.env.time; t.hour = 15; t.north = 0;
+      Object.assign(S.people[1], { on: true, skin: 4 }); E.seatPeople(); E.buildEnvironment(); E.buildPeople();
+      // rebote afuera, junto a la ventanilla del conductor, para rellenar la sombra del techo
+      const rb = addItem('bounce', { x: 1.55, z: 0.45, y: 1.2, face: 'white' }); aimAtSubject(rb, 0); E.syncItem(rb);
+    },
+    'Auto de noche': () => {
+      base('auto', { x: 0.45, z: 3.4, lens: '50', iso: 5, wb: 3200 }); S.env.ext.kind = 'calle';
+      S.env.time.hour = 22.5; Object.assign(S.people[1], { on: true, skin: 4 }); E.seatPeople(); E.buildEnvironment(); E.buildPeople();
+      // LED chico sobre el tablero que simula la luz de los instrumentos, y un farol de la calle
+      addItem('panel', { x: 0.25, z: 0.95, y: 1.0, mode: 'temp', k: 4300, dim: 18, diff: 'full' });
+      addItem('bombita', { x: -2.6, z: -2.0, y: 3.2, p: 3 });
+    },
+    'Vacío': () => { base('auto', { z: 3.6, iso: 0 }); E.seatPeople(); E.buildEnvironment(); E.buildPeople(); },
+  },
 };
 export function applyPreset(mode, name) {
   PRESETS[mode][name]();
   syncScenePanel(); syncCamUI(); renderItems(); renderProps(); meterFace(true); refreshMove(); drawPlan(); req();
 }
-const MODE_NAME = { estudio: 'Estudio', interior: 'Interior', exterior: 'Exterior' };
+const MODE_NAME = { estudio: 'Estudio', interior: 'Interior', exterior: 'Exterior', auto: 'Auto' };
 export function renderPresets() {
   $('#presets').innerHTML = Object.keys(PRESETS).map(m => `<div class="preset-group"><h3>${MODE_NAME[m]}</h3><div class="presets">${Object.keys(PRESETS[m]).map(n => `<button data-mode="${m}" data-p="${n}">${n}</button>`).join('')}</div></div>`).join('');
 }

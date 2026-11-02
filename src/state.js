@@ -10,6 +10,16 @@ export const TSTOPS = [1.4, 2, 2.8, 4, 5.6, 8, 11, 16, 22];
 export const ISOS = [100, 200, 400, 800, 1600, 3200, 6400, 12800];
 export const EXP_K = 0.11; // ISO 800: 215 lux a T2.8 ≈ gris medio
 export const MAX_SHADOW_LIGHTS = 8;
+export const MAX_PEOPLE = 5;
+export const MAX_CAMS = 3;
+// cada cámara tiene su color para reconocerla en la planta, el set y los menús
+export const CAM_COLORS = ['#7CC7FF', '#FF7A59', '#BEE35A'];
+export const CAM_NAMES = ['A', 'B', 'C'];
+export const PERSON_SPOTS = [[0, 0, 'sentado', 2], [0.9, -0.5, 'pie', 4], [-0.9, -0.5, 'pie', 1], [1.7, 0.2, 'pie', 3], [-1.7, 0.2, 'pie', 5]];
+export function defaultCam() {
+  return { x: 0, z: 3.4, h: 'normal', a: 'normal', tilt: 0, hOff: 0, lens: '50', T: 2, iso: 3, wb: 5600, nd: 0, frame: 'p1', dof: true, fm: 'p1', focus: 3.4, shutter: 180, fps: 24, move: { A: null, B: null } };
+}
+export const personIndex = key => { const m = /^p(\d)$/.exec(key || ''); return m ? +m[1] - 1 : -1; };
 
 function todayParts() { const d = new Date(); return { month: d.getMonth() + 1, day: d.getDate() }; }
 
@@ -22,21 +32,21 @@ export function defaultState() {
       studio: { color: '#6d6d70', dist: 2.5 },
       room: { w: 7, d: 6, h: 2.7, wall: '#cdc6ba', floor: '#6e5a48' },
       ext: { kind: 'abierto' },
+      car: { color: '#8a1f2b' },
       time: { hour: 14, month: t.month, day: t.day, city: 'bsas', lat: -34.6, lon: -58.38, tz: -3, north: 0 },
       amb: 1,
     },
     items: [],
-    people: [
-      { x: 0, z: 0, pose: 'sentado', rot: 0, skin: 2, on: true },
-      { x: 0.9, z: -0.5, pose: 'pie', rot: 0, skin: 4, on: false },
-    ],
-    cam: { x: 0, z: 3.4, h: 'normal', a: 'normal', tilt: 0, hOff: 0, lens: '50', T: 2, iso: 3, wb: 5600, nd: 0, frame: 'p1', dof: true, fm: 'p1', focus: 3.4, shutter: 180, fps: 24 },
-    move: { A: null, B: null },
+    people: PERSON_SPOTS.map(([x, z, pose, skin], i) => ({ x, z, pose, rot: 0, skin, on: i === 0 })),
+    cams: [defaultCam()],
   };
 }
 
 export const S = defaultState();
-export const UI = { sel: null, selPerson: 0, view: 'monitor', pip: true, quality: 'media', tab: 'escena', present: false };
+export const UI = { sel: null, selPerson: 0, cam: 0, view: 'monitor', pip: true, quality: 'media', tab: 'escena', present: false };
+// S.cam y S.move apuntan siempre a la cámara activa (y a su movimiento A → B)
+Object.defineProperty(S, 'cam', { get: () => S.cams[UI.cam] || S.cams[0], enumerable: false });
+Object.defineProperty(S, 'move', { get: () => { const c = S.cam; return c.move || (c.move = { A: null, B: null }); }, enumerable: false });
 export let uidCounter = { v: 1 };
 export const nextId = () => uidCounter.v++;
 

@@ -1,6 +1,6 @@
 // Geometría: personajes, equipos, mobiliario, prácticas.
 import * as THREE from 'three';
-import { TYPES, FLAG_SIZES, FACES, SKINS } from './catalog.js';
+import { TYPES, FLAG_SIZES, FACES, SKINS, furnSize } from './catalog.js';
 
 export const std = (hex, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: 0.85, metalness: 0 }, o));
 export function mesh(geo, mat, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.castShadow = true; m.receiveShadow = true; return m; }
@@ -16,6 +16,9 @@ export const MAT = {
   wood: std('#3a3530'),
   cloth1: std('#5f636b', { roughness: 0.9 }),
   cloth2: std('#6b5a4c', { roughness: 0.9 }),
+  cloth3: std('#3f5a6b', { roughness: 0.9 }),
+  cloth4: std('#6b4a5c', { roughness: 0.9 }),
+  cloth5: std('#5a6b47', { roughness: 0.9 }),
   hair: std('#2a1f1a', { roughness: 0.8 }),
   eye: std('#e8e2da', { roughness: 0.3 }),
 };
@@ -29,14 +32,16 @@ function limb(g, mat, a, b, r1, r2) {
 }
 
 // Maniquí: devuelve { group, headY }
-export function buildPersonMesh(P, idx) {
-  const skin = skinMats[P.skin], cloth = idx === 0 ? MAT.cloth1 : MAT.cloth2;
-  const g = new THREE.Group(), seated = P.pose === 'sentado', y0 = P.pose === 'elevado' ? 0.5 : 0;
+// inCar: sentado en el asiento de un auto (sin banqueta, piernas hacia adelante y pies en el piso del auto)
+export function buildPersonMesh(P, idx, inCar = false) {
+  const skin = skinMats[P.skin], cloth = MAT['cloth' + (idx % 5 + 1)];
+  const g = new THREE.Group(), seated = P.pose === 'sentado' || inCar, y0 = !inCar && P.pose === 'elevado' ? 0.5 : 0;
   const hip = seated ? 0.5 : 0.92;
-  if (P.pose === 'elevado') g.add(mesh(box(1.2, 0.5, 1.0), MAT.wood, 0, 0.25, 0));
-  if (seated) { g.add(mesh(cyl(0.2, 0.2, 0.05, 24), MAT.wood, 0, 0.45, -0.05)); for (const [x, z] of [[-.13, -.16], [.13, -.16], [-.13, .08], [.13, .08]]) g.add(mesh(cyl(0.015, 0.015, 0.44, 8), MAT.dark, x, 0.22, z - 0.02)); }
+  if (!inCar && P.pose === 'elevado') g.add(mesh(box(1.2, 0.5, 1.0), MAT.wood, 0, 0.25, 0));
+  if (seated && !inCar) { g.add(mesh(cyl(0.2, 0.2, 0.05, 24), MAT.wood, 0, 0.45, -0.05)); for (const [x, z] of [[-.13, -.16], [.13, -.16], [-.13, .08], [.13, .08]]) g.add(mesh(cyl(0.015, 0.015, 0.44, 8), MAT.dark, x, 0.22, z - 0.02)); }
   for (const s of [-1, 1]) {
-    if (seated) { limb(g, cloth, [0.1 * s, y0 + hip, 0], [0.11 * s, y0 + hip, 0.42], 0.075, 0.06); limb(g, cloth, [0.11 * s, y0 + hip, 0.42], [0.11 * s, y0 + 0.06, 0.45], 0.058, 0.045); g.add(mesh(box(0.09, 0.06, 0.24), MAT.dark, 0.11 * s, y0 + 0.03, 0.5)); }
+    if (inCar) { limb(g, cloth, [0.1 * s, hip, 0], [0.12 * s, hip + 0.06, 0.44], 0.075, 0.06); limb(g, cloth, [0.12 * s, hip + 0.06, 0.44], [0.12 * s, hip - 0.25, 0.6], 0.058, 0.045); g.add(mesh(box(0.09, 0.06, 0.24), MAT.dark, 0.12 * s, hip - 0.25, 0.68)); }
+    else if (seated) { limb(g, cloth, [0.1 * s, y0 + hip, 0], [0.11 * s, y0 + hip, 0.42], 0.075, 0.06); limb(g, cloth, [0.11 * s, y0 + hip, 0.42], [0.11 * s, y0 + 0.06, 0.45], 0.058, 0.045); g.add(mesh(box(0.09, 0.06, 0.24), MAT.dark, 0.11 * s, y0 + 0.03, 0.5)); }
     else { limb(g, cloth, [0.1 * s, y0 + hip, 0], [0.1 * s, y0 + 0.48, 0.01], 0.075, 0.058); limb(g, cloth, [0.1 * s, y0 + 0.48, 0.01], [0.1 * s, y0 + 0.06, 0], 0.056, 0.045); g.add(mesh(box(0.09, 0.06, 0.24), MAT.dark, 0.1 * s, y0 + 0.03, 0.06)); }
   }
   const sh = y0 + hip + 0.55;
@@ -168,6 +173,56 @@ export function buildFurniture(it, root) {
     root.add(mesh(box(1.45, 0.9, 0.06), c, 0, 0.45, -1.0));
     for (const s of [-1, 1]) root.add(mesh(box(0.55, 0.12, 0.35), std('#f2f0ea', { roughness: 0.95 }), s * 0.33, 0.58, -0.72));
   }
+  // tamaño elegido por el usuario: se escala el mueble entero
+  const [w0, h0, d0] = T.size, [w, h, d] = furnSize(it);
+  root.scale.set(w / w0, h / h0, d / d0);
+}
+
+/* ---------- auto (sedán, frente hacia +z) ---------- */
+// asientos: conductor (izquierda, como en Argentina), acompañante y tres atrás
+export const CAR_SEATS = [[0.38, 0.25], [-0.38, 0.25], [0.48, -0.78], [0, -0.78], [-0.48, -0.78]];
+export const CAR = { x: 0.9, zF: 2.25, zB: -2.35, roof: 1.47 };
+export function buildCar(color, glassMat) {
+  const g = new THREE.Group(), occ = [];
+  const paint = std(color, { roughness: 0.35, metalness: 0.5 }), trim = std('#1a1a1d', { roughness: 0.6 }), seat = std('#2b2a2e', { roughness: 0.9 }), tire = std('#151515', { roughness: 0.9 }), rim = std('#9a9da3', { roughness: 0.3, metalness: 0.8 });
+  const add = (m, o = true) => { g.add(m); if (o) occ.push(m); return m; };
+  const glass = (w, h, x, y, z, rx = 0, ry = 0) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), glassMat); m.position.set(x, y, z); m.rotation.set(rx, ry, 0, 'YXZ'); m.castShadow = false; m.receiveShadow = false; g.add(m); };
+  // carrocería baja, piso, capó y baúl
+  add(mesh(box(1.8, 0.1, 4.5), trim, 0, 0.17, -0.05));
+  add(mesh(box(1.6, 0.03, 2.3), trim, 0, 0.21, -0.2));
+  for (const s of [-1, 1]) add(mesh(box(0.08, 0.75, 2.35), paint, s * 0.86, 0.585, -0.18));
+  add(mesh(box(1.78, 0.5, 1.25), paint, 0, 0.6, 1.62));
+  add(mesh(box(1.78, 0.55, 0.95), paint, 0, 0.675, -1.88));
+  add(mesh(box(1.6, 0.62, 0.08), trim, 0, 0.62, -1.38));
+  // tablero, volante y espejo
+  add(mesh(box(1.64, 0.28, 0.32), trim, 0, 0.84, 0.9));
+  const wheel = add(mesh(new THREE.TorusGeometry(0.18, 0.022, 10, 28), trim, 0.38, 0.95, 0.66), false); wheel.rotation.x = -0.45;
+  add(mesh(box(0.22, 0.06, 0.03), trim, 0, 1.33, 0.55), false);
+  // techo y parantes
+  add(mesh(box(1.56, 0.05, 1.4), paint, 0, 1.445, -0.2));
+  const post = (x, y0, z0, y1, z1) => { const A = new THREE.Vector3(x, y0, z0), B = new THREE.Vector3(x, y1, z1), m = mesh(box(0.07, A.distanceTo(B), 0.07), paint); m.position.copy(A).add(B).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()); add(m); };
+  for (const s of [-1, 1]) { post(s * 0.8, 0.95, 1.02, 1.44, 0.5); post(s * 0.82, 0.95, -0.27, 1.44, -0.27); post(s * 0.8, 0.95, -1.38, 1.44, -0.9); }
+  // vidrios
+  const wsLen = Math.hypot(0.52, 0.49), rsLen = Math.hypot(0.48, 0.49);
+  glass(1.56, wsLen, 0, 1.195, 0.76, -Math.atan2(0.52, 0.49));
+  glass(1.56, rsLen, 0, 1.195, -1.14, Math.atan2(0.48, 0.49));
+  for (const s of [-1, 1]) { glass(0.72, 0.47, s * 0.84, 1.2, 0.12, 0, Math.PI / 2); glass(0.6, 0.47, s * 0.84, 1.2, -0.6, 0, Math.PI / 2); }
+  // asientos
+  for (const [x, z] of CAR_SEATS.slice(0, 2)) {
+    add(mesh(box(0.5, 0.12, 0.5), seat, x, 0.39, z + 0.05));
+    const back = add(mesh(box(0.5, 0.68, 0.1), seat, x, 0.78, z - 0.24)); back.rotation.x = -0.12;
+    add(mesh(box(0.26, 0.18, 0.08), seat, x, 1.22, z - 0.3));
+  }
+  add(mesh(box(1.5, 0.12, 0.5), seat, 0, 0.39, -0.73));
+  const rb = add(mesh(box(1.5, 0.62, 0.1), seat, 0, 0.75, -1.06)); rb.rotation.x = -0.15;
+  // ruedas
+  for (const sx of [-1, 1]) for (const z of [1.45, -1.5]) {
+    const t = mesh(cyl(0.32, 0.32, 0.22, 24), tire, sx * 0.8, 0.32, z); t.rotation.z = Math.PI / 2; g.add(t);
+    const r = mesh(cyl(0.17, 0.17, 0.23, 16), rim, sx * 0.8, 0.32, z); r.rotation.z = Math.PI / 2; g.add(r);
+  }
+  // faros
+  for (const s of [-1, 1]) { g.add(mesh(box(0.34, 0.1, 0.04), std('#f4f1e8', { roughness: 0.2 }), s * 0.62, 0.72, 2.25)); g.add(mesh(box(0.34, 0.1, 0.04), std('#7a1a1a', { roughness: 0.3 }), s * 0.62, 0.82, -2.36)); }
+  return { group: g, occ };
 }
 
 // Gripería (origen en el piso, frente hacia +z)

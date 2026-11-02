@@ -1,9 +1,9 @@
 // Motor 3D de HAPI: escena, entornos, equipos, luz y render.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
-import { S, UI, D2R, R2D, clamp, TSTOPS, ISOS, EXP_K, req } from './state.js';
+import { S, UI, D2R, R2D, clamp, TSTOPS, ISOS, EXP_K, req, personIndex, CAM_COLORS, MAX_CAMS } from './state.js';
 import { TYPES, DIFF, GRID, GEL, FACES, LENSES, BULBS, BUTTERFLY_FACES, APPLE, isLightType } from './catalog.js';
-import { std, mesh, cyl, box, MAT, buildPersonMesh, standMesh, buildFixture, buildFlag, buildBounce, buildPractical, buildFurniture, buildGrip } from './build.js';
+import { std, mesh, cyl, box, MAT, buildPersonMesh, standMesh, buildFixture, buildFlag, buildBounce, buildPractical, buildFurniture, buildGrip, buildCar, CAR_SEATS } from './build.js';
 import { sunPosition, daylight, skyColors } from './sun.js';
 
 RectAreaLightUniformsLib.init();
@@ -118,16 +118,18 @@ export function buildEnvironment() {
     const ext = S.env.ext.kind, gcol = mode === 'interior' ? '#55673f' : ext === 'calle' ? '#38383b' : ext === 'patio' ? '#8b8175' : '#4f6b3a';
     const ground = mesh(new THREE.PlaneGeometry(400, 400), std(gcol, { roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.002; ground.castShadow = false; envGroup.add(ground);
     env.groundCol = hexRGB(gcol).map(lin);
-    if (mode === 'exterior' && ext === 'calle') {
+    const outdoor = mode === 'exterior' || mode === 'auto';
+    if (outdoor && ext === 'calle') {
       const walk = mesh(box(30, 0.15, 3), std('#77736d', { roughness: 0.95 }), 0, 0.075, -4.5); envGroup.add(walk); env.occluders.push(walk);
       const fac = mesh(box(30, 12, 0.4), std('#a69886', { roughness: 0.9 }), 0, 6, -6.2); envGroup.add(fac); env.occluders.push(fac);
       for (let i = -6; i <= 6; i++) for (let f = 0; f < 3; f++) { const w = mesh(box(1.1, 1.5, 0.1), std('#22262c', { roughness: 0.3, metalness: 0.3 }), i * 2.2, 2 + f * 3.4, -5.98); w.castShadow = false; envGroup.add(w); }
       const curb = mesh(box(30, 0.16, 0.2), std('#8c8780'), 0, 0.08, -2.95); envGroup.add(curb);
-    } else if (mode === 'exterior' && ext === 'patio') {
+    } else if (outdoor && ext === 'patio') {
       const wm = std('#c9bca8', { roughness: 0.92 });
       for (const [x, z, w, d] of [[0, -6, 12.4, 0.2], [0, 6, 12.4, 0.2], [-6.1, 0, 0.2, 12], [6.1, 0, 0.2, 12]]) { const m = mesh(box(w, 3, d), wm, x, 1.5, z); envGroup.add(m); env.occluders.push(m); }
     }
     if (mode === 'interior') buildRoom();
+    if (mode === 'auto') { const car = buildCar(S.env.car.color, glassMat); envGroup.add(car.group); env.occluders.push(...car.occ); }
     env.floorY = 0;
   }
   placeSunCamera(); req();
@@ -183,13 +185,26 @@ export function buildPeople() {
   S.people.forEach((P, i) => {
     if (P._grp) { scene.remove(P._grp); P._grp = null; }
     if (!P.on) return;
-    const { group, headY } = buildPersonMesh(P, i);
+    const { group, headY } = buildPersonMesh(P, i, S.env.mode === 'auto');
     group.position.set(P.x, 0, P.z); group.rotation.y = P.rot * D2R; group.userData.person = i;
     group.traverse(m => { m.userData.person = i; });
     P._grp = group; P._eye = headY; P._head = new THREE.Vector3(P.x, headY, P.z); scene.add(group);
   });
   S.people.forEach(P => { if (!P._head) P._head = new THREE.Vector3(P.x, 1.3, P.z); });
   headWorld.copy(S.people[0]._head); req();
+}
+// asientos del auto: posición de cada uno y el asiento libre más cercano a (x, z)
+export const carSeat = i => ({ x: CAR_SEATS[i][0], z: CAR_SEATS[i][1] });
+export function seatSnap(P, x, z) {
+  const taken = new Set(S.people.filter(Q => Q.on && Q !== P).map(Q => Q.seat));
+  let best = P.seat ?? 0, bd = Infinity;
+  CAR_SEATS.forEach(([sx, sz], i) => { if (taken.has(i)) return; const d = Math.hypot(sx - x, sz - z); if (d < bd) { bd = d; best = i; } });
+  P.seat = best; const c = carSeat(best); P.x = c.x; P.z = c.z; return [P.x, P.z];
+}
+export function freeSeat() { const taken = new Set(S.people.filter(Q => Q.on && Q.seat != null).map(Q => Q.seat)); return CAR_SEATS.findIndex((_, i) => !taken.has(i)); }
+export function seatPeople() {
+  S.people.forEach(P => { delete P.seat; });
+  S.people.forEach(P => { if (!P.on) return; P.pose = 'sentado'; P.rot = 0; P.seat = freeSeat(); const c = carSeat(P.seat); P.x = c.x; P.z = c.z; });
 }
 export function placePerson(P) { if (!P._grp) return; P._grp.position.set(P.x, 0, P.z); P._grp.rotation.y = P.rot * D2R; P._head.set(P.x, P._eye, P.z); headWorld.copy(S.people[0]._head); req(); }
 
@@ -369,7 +384,7 @@ export function updateLights() {
     skyMat.uniforms.hz.value.set(...fix(cols.hz).map(v => v * Lsky)); skyMat.uniforms.ze.value.set(...fix(cols.ze).map(v => v * Lsky * 0.9));
     skyMat.uniforms.sunDir.value.copy(sd.dir); skyMat.uniforms.sunCol.value.set(...sc.map(v => v * dl.sunLux / 30));
     skyMat.uniforms.ground.value.set(...env.groundCol.map(v => v * (dl.skyLux + dl.sunLux * Math.max(0, sd.dir.y)) * 0.08 / Math.PI));
-    if (S.env.mode === 'exterior') {
+    if (S.env.mode === 'exterior' || S.env.mode === 'auto') {
       hemi.color.setRGB(...skc); hemi.groundColor.setRGB(...env.groundCol.map(v => v * 0.35 / Math.max(...env.groundCol)));
       hemi.intensity = dl.skyLux * 0.9 + S.env.amb;
     } else {
@@ -436,46 +451,60 @@ export function placeSetCam() {
   const { th, ph, r, tx, ty, tz } = orbit;
   setCam.position.set(tx + r * Math.sin(ph) * Math.sin(th), ty + r * Math.cos(ph), tz + r * Math.sin(ph) * Math.cos(th)); setCam.lookAt(tx, ty, tz);
 }
-const camBody = new THREE.Group();
-{
-  const m = std('#2c2c33', { roughness: 0.5, metalness: 0.4 });
-  camBody.add(new THREE.Mesh(box(0.16, 0.14, 0.22), m));
-  const l = new THREE.Mesh(cyl(0.045, 0.05, 0.16, 16), std('#111', { roughness: 0.4 })); l.rotation.x = Math.PI / 2; l.position.z = -0.18; camBody.add(l);
-  const tri = new THREE.Mesh(cyl(0.015, 0.015, 1, 6), m); tri.position.y = -0.55; camBody.add(tri);
-  camBody.traverse(o => o.layers.set(1));
+// un cuerpo de cámara y un cono de visión por cámara, con su color
+function makeCamBody(color) {
+  const g = new THREE.Group(), m = std('#2c2c33', { roughness: 0.5, metalness: 0.4 }), band = std(color, { roughness: 0.4, emissive: color, emissiveIntensity: 0.35 });
+  g.add(new THREE.Mesh(box(0.16, 0.14, 0.22), m));
+  const l = new THREE.Mesh(cyl(0.045, 0.05, 0.16, 16), std('#111', { roughness: 0.4 })); l.rotation.x = Math.PI / 2; l.position.z = -0.18; g.add(l);
+  const tri = new THREE.Mesh(cyl(0.015, 0.015, 1, 6), m); tri.position.y = -0.55; g.add(tri);
+  const tag = new THREE.Mesh(box(0.165, 0.035, 0.225), band); tag.position.y = 0.06; g.add(tag);
+  const ring = new THREE.Mesh(cyl(0.053, 0.053, 0.03, 16), band); ring.rotation.x = Math.PI / 2; ring.position.z = -0.25; g.add(ring);
+  g.traverse(o => o.layers.set(1)); scene.add(g);
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(48), 3));
+  const fr = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75 })); fr.layers.set(1); scene.add(fr);
+  return { body: g, frustum: fr };
 }
-scene.add(camBody);
-const frustumGeo = new THREE.BufferGeometry(); frustumGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(48), 3));
-const frustum = new THREE.LineSegments(frustumGeo, new THREE.LineBasicMaterial({ color: '#FFB547', transparent: true, opacity: 0.7 })); frustum.layers.set(1); scene.add(frustum);
+const camRigs = CAM_COLORS.slice(0, MAX_CAMS).map(makeCamBody);
+const tmpCam = new THREE.PerspectiveCamera();
 
 export const CAM_H = { bajo: 0.6, alto: 2.4 };
 export const CAM_A = { normal: 0, picado: -20, contrapicado: 20, holandes: 0 };
+// personaje encuadrado o enfocado: 'p1'…'p5' si está en escena; si no, el personaje 1
+export function personFor(key) { const i = personIndex(key), P = S.people[i]; return P && P.on ? P : S.people[0]; }
 export function camTarget(c = S.cam) {
   if (c._target) return c._target.clone();
-  const P1 = S.people[0], P2 = S.people[1];
-  if (c.frame === 'p2' && P2.on) return P2._head.clone();
-  if (c.frame === 'both' && P2.on) return P1._head.clone().add(P2._head).multiplyScalar(0.5);
-  return P1._head.clone();
+  if (c.frame === 'both') { const on = S.people.filter(P => P.on); return on.reduce((v, P) => v.add(P._head), new THREE.Vector3()).multiplyScalar(1 / on.length); }
+  return personFor(c.frame)._head.clone();
 }
 export function camHeight(c = S.cam) { if (c._hAbs != null) return c._hAbs; return clamp((c.h === 'normal' ? camTarget(c).y : CAM_H[c.h]) + c.hOff, 0.2, 3.6); }
 const lensFovV = f => 2 * Math.atan(10.125 / f) * R2D;
-export function placeCam() {
-  const c = S.cam, y = camHeight(); cam.position.set(c.x, y, c.z);
-  const T = camTarget(), yaw = Math.atan2(T.x - c.x, T.z - c.z) + Math.PI;
+function poseCam(c, C) {
+  const y = camHeight(c); C.position.set(c.x, y, c.z);
+  const T = camTarget(c), yaw = Math.atan2(T.x - c.x, T.z - c.z) + Math.PI;
   const pitch = (c._pitch != null ? c._pitch : CAM_A[c.a] + c.tilt) * D2R, roll = (c._roll != null ? c._roll : c.a === 'holandes' ? 18 : 0) * D2R;
-  cam.rotation.order = 'YXZ'; cam.rotation.set(pitch, yaw, roll);
-  const L = LENSES[c.lens]; cam.fov = L.fish ? 90 : lensFovV(L.f); cam.updateProjectionMatrix();
-  camBody.position.copy(cam.position); camBody.rotation.copy(cam.rotation);
-  camBody.children[2].scale.y = y; camBody.children[2].position.y = -y / 2 - 0.07;
-  const hw = L.fish ? Math.tan(68 * D2R) : 18 / L.f, hh = L.fish ? Math.tan(50 * D2R) : 10.125 / L.f, d = 4;
-  const pts = [[-hw, hh], [hw, hh], [hw, -hh], [-hw, -hh]].map(([a, b]) => new THREE.Vector3(a * d, b * d, -d).applyEuler(cam.rotation).add(cam.position));
-  const arr = frustumGeo.attributes.position.array; let k = 0; const push = v => { arr[k++] = v.x; arr[k++] = v.y; arr[k++] = v.z; };
-  for (let i = 0; i < 4; i++) { push(cam.position); push(pts[i]); push(pts[i]); push(pts[(i + 1) % 4]); }
-  frustumGeo.attributes.position.needsUpdate = true; frustumGeo.computeBoundingSphere();
+  C.rotation.order = 'YXZ'; C.rotation.set(pitch, yaw, roll);
+  const L = LENSES[c.lens]; C.fov = L.fish ? 90 : lensFovV(L.f); C.updateProjectionMatrix();
+  return y;
+}
+// ubica la cámara activa (la del monitor) y los cuerpos de todas las cámaras en el set
+export function placeCam() {
+  S.cams.forEach((c, i) => {
+    const C = c === S.cam ? cam : tmpCam, y = poseCam(c, C), rig = camRigs[i], L = LENSES[c.lens];
+    rig.body.visible = rig.frustum.visible = true;
+    rig.body.position.copy(C.position); rig.body.rotation.copy(C.rotation);
+    rig.body.children[2].scale.y = y; rig.body.children[2].position.y = -y / 2 - 0.07;
+    rig.frustum.material.opacity = c === S.cam ? 0.8 : 0.35;
+    const hw = L.fish ? Math.tan(68 * D2R) : 18 / L.f, hh = L.fish ? Math.tan(50 * D2R) : 10.125 / L.f, d = c === S.cam ? 4 : 2.5;
+    const pts = [[-hw, hh], [hw, hh], [hw, -hh], [-hw, -hh]].map(([a, b]) => new THREE.Vector3(a * d, b * d, -d).applyEuler(C.rotation).add(C.position));
+    const geo = rig.frustum.geometry, arr = geo.attributes.position.array; let k = 0; const push = v => { arr[k++] = v.x; arr[k++] = v.y; arr[k++] = v.z; };
+    for (let j = 0; j < 4; j++) { push(C.position); push(pts[j]); push(pts[j]); push(pts[(j + 1) % 4]); }
+    geo.attributes.position.needsUpdate = true; geo.computeBoundingSphere();
+  });
+  for (let i = S.cams.length; i < camRigs.length; i++) camRigs[i].body.visible = camRigs[i].frustum.visible = false;
 }
 export function focusDist() {
   const c = S.cam; if (c.fm === 'manual') return c.focus;
-  const P = c.fm === 'p2' && S.people[1].on ? S.people[1] : S.people[0];
+  const P = personFor(c.fm);
   const fwd = new THREE.Vector3(0, 0, -1).applyEuler(cam.rotation);
   return Math.max(0.3, P._head.clone().sub(cam.position).dot(fwd));
 }
@@ -562,7 +591,7 @@ export function setAdapt() {
       const o = L.userData.op, n = roomWalls()[o.wall].n, to = H.clone().sub(L.position), d2 = Math.max(0.5, to.lengthSq()); to.normalize();
       const Ew = L.intensity * L.width * L.height * Math.max(0, n[0] * to.x + n[1] * to.z) / d2; lux += Ew; add(Ew, dl.skyK);
     }
-    if (S.env.mode === 'exterior' && sun.visible) { const y = Math.max(0, sunDirection().dir.y), Es = sun.intensity * Math.max(y, 0.7 * Math.sqrt(1 - y * y)); lux += Es; add(Es, dl.sunK); }
+    if ((S.env.mode === 'exterior' || S.env.mode === 'auto') && sun.visible) { const y = Math.max(0, sunDirection().dir.y), Es = sun.intensity * Math.max(y, 0.7 * Math.sqrt(1 - y * y)); lux += Es; add(Es, dl.sunK); }
   }
   // adaptación parcial, como el ojo: una luz cálida se sigue viendo algo cálida
   const m = wsum > 0 ? 0.65 * (mired / wsum) + 0.35 * (1e6 / 5600) : 1e6 / 5600;

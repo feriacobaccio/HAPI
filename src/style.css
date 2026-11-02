@@ -172,3 +172,13 @@ body.present .stage{height:100%;aspect-ratio:auto;border-radius:0;border:0}
 #tabs button[aria-selected="true"]::after{opacity:1;left:12%;right:12%}
 .tabpanel .panel{border-color:color-mix(in srgb,var(--accent) 18%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 6%,var(--panel)),var(--panel) 90px);box-shadow:inset 0 2px 0 color-mix(in srgb,var(--accent) 55%,transparent)}
 .tabpanel .panel h2{color:color-mix(in srgb,var(--accent) 65%,var(--muted))}
+
+/* varias cámaras: cada una con su color */
+.camsel button{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.camsel button::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--camc)}
+.camsel button[aria-pressed="true"]{background:var(--camc)!important;color:#141218}
+.camsel button[aria-pressed="true"]::before{background:#141218}
+.stage.multi{box-shadow:0 0 0 2px var(--camc)}
+.hud .camid{background:var(--camc)!important;color:#141218;font-weight:700}
+.hud .camid:empty{display:none}
+.seg#ptab button{min-width:44px}

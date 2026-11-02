@@ -1,6 +1,6 @@
 // Colisiones simples en planta (rectángulos orientados + rango de altura).
 import { S, D2R, clamp } from './state.js';
-import { TYPES, APPLE } from './catalog.js';
+import { TYPES, APPLE, furnSize } from './catalog.js';
 
 // Huella de un elemento: centro, medio ancho/profundidad, giro y rango de altura.
 export function footprint(o) {
@@ -10,7 +10,7 @@ export function footprint(o) {
   }
   const T = TYPES[o.type], y = o.y || 0;
   if (T.cat === 'abertura') return null;
-  if (T.cat === 'mueble') { const [w, h, d] = T.size; return { x: o.x, z: o.z, hw: w / 2, hd: d / 2, yaw: o.yaw, y0: y, y1: y + h }; }
+  if (T.cat === 'mueble') { const [w, h, d] = furnSize(o); return { x: o.x, z: o.z, hw: w / 2, hd: d / 2, yaw: o.yaw, y0: y, y1: y + h }; }
   if (T.practical) {
     const r = { velador: 0.17, pie: 0.24, colgante: 0.22, bombita: 0.05, vela: 0.05 }[o.type];
     const [a, b] = { velador: [0, 0.55], pie: [0, 1.7], colgante: [-0.25, 0.6], bombita: [-0.1, 0.55], vela: [0, 0.2] }[o.type];
@@ -39,6 +39,7 @@ function overlap2D(a, b) {
 const SIT = new Set(['silla', 'sillon', 'cama', 'tarima', 'applebox']);
 const ON_RAIL = new Set(['dolly', 'slider', 'tripode', 'steadicam']);
 function allowed(a, b, fa, fb) {
+  if (S.env.mode === 'auto' && (fa.person || fb.person)) return true; // en el auto cada personaje va en su asiento
   if (fa.person && b && SIT.has(b.type)) return true;
   if (fb.person && a && SIT.has(a.type)) return true;
   if (a && b && ((a.type === 'riel' && ON_RAIL.has(b.type)) || (b.type === 'riel' && ON_RAIL.has(a.type)))) return true;

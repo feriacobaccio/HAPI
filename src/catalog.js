@@ -82,4 +82,6 @@ export const CITIES = {
   mad: { name: 'Madrid', lat: 40.42, lon: -3.7, tz: 1 },
   custom: { name: 'Otra (latitud y longitud)', lat: -34.6, lon: -58.38, tz: -3 },
 };
+// medidas actuales de un mueble (ancho, alto, profundidad): las del usuario o las del catálogo
+export const furnSize = it => { const z = TYPES[it.type].size; return [it.sw ?? z[0], it.sh ?? z[1], it.sd ?? z[2]]; };
 export const isLightType = t => !!(TYPES[t] && (TYPES[t].lm || TYPES[t].powers || TYPES[t].practical));

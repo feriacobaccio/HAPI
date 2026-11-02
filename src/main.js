@@ -20,7 +20,7 @@ tc.addEventListener('objectChange', () => {
   const o = tc.object; if (!o || !tcTarget) return;
   const snap = v => Math.round(v * 20) / 20;
   const bounds = S.env.mode === 'interior' ? E.roomBounds() : null;
-  if (tcTarget.person != null) { const P = S.people[tcTarget.person]; [P.x, P.z] = resolveMove(P, snap(o.position.x), snap(o.position.z), bounds); E.placePerson(P); U.syncPersonUI(); U.updateLensInfo(); }
+  if (tcTarget.person != null) { const P = S.people[tcTarget.person]; if (S.env.mode === 'auto') E.seatSnap(P, o.position.x, o.position.z); else [P.x, P.z] = resolveMove(P, snap(o.position.x), snap(o.position.z), bounds); E.placePerson(P); U.syncPersonUI(); U.updateLensInfo(); }
   else { const it = S.items.find(i => i.id === tcTarget.id); if (!it) return; [it.x, it.z] = resolveMove(it, snap(o.position.x), snap(o.position.z), bounds); it.y = clamp(snap(o.position.y), 0, 4.5); E.syncItem(it); U.renderProps(true); }
   drawPlan(); req();
 });
@@ -97,6 +97,7 @@ document.addEventListener('keydown', e => {
   if (k >= '1' && k <= '5') U.setLens(L[+k - 1]);
   else if (k === 'v') U.setView(UI.view === 'monitor' ? 'set' : 'monitor');
   else if (k === 'p') setPresent(!UI.present);
+  else if (k === 'c') U.nextCam();
   else if (k === 'escape' && UI.present) setPresent(false);
   else if ((k === 'delete' || k === 'backspace') && UI.sel != null) { const it = S.items.find(i => i.id === UI.sel); if (it) { E.removeItem(it); UI.sel = null; U.renderItems(); U.renderProps(); drawPlan(); U.attachGizmo(); } }
 });

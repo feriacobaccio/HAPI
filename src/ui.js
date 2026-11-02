@@ -1,7 +1,7 @@
 // Paneles, propiedades y controles de HAPI.
 import * as THREE from 'three';
-import { S, UI, $, $$, D2R, R2D, clamp, fmt, TSTOPS, ISOS, MAX_SHADOW_LIGHTS, req, on, emit, toast, nextId } from './state.js';
-import { TYPES, BULBS, FLAG_SIZES, DIFF, GEL, FACES, LENSES, SKINS, CITIES, WOODS, BUTTERFLY_SIZES, BUTTERFLY_FACES, APPLE } from './catalog.js';
+import { S, UI, $, $$, D2R, R2D, clamp, fmt, TSTOPS, ISOS, MAX_SHADOW_LIGHTS, MAX_PEOPLE, MAX_CAMS, CAM_COLORS, CAM_NAMES, PERSON_SPOTS, defaultCam, personIndex, req, on, emit, toast, nextId } from './state.js';
+import { TYPES, BULBS, FLAG_SIZES, DIFF, GEL, FACES, LENSES, SKINS, CITIES, WOODS, BUTTERFLY_SIZES, BUTTERFLY_FACES, APPLE, furnSize } from './catalog.js';
 import { freeSpot } from './collide.js';
 import * as E from './engine.js';
 import { drawPlan, PV, zoomPlan, planWorld, planContains } from './plan.js';
@@ -143,6 +143,7 @@ export function renderProps(light) {
   if (it.type === 'butterfly') { h += segRow('Marco', 'side', Object.entries(BUTTERFLY_SIZES).map(([k, v]) => [v, k + '×' + k]), it.side); h += segRow('Tela', 'face', Object.entries(BUTTERFLY_FACES), it.face); }
   if (it.type === 'applebox') { h += segRow('Tamaño', 'size', Object.entries(APPLE).map(([k, v]) => [k, v[3]]), it.size); h += segRow('Cantidad', 'count', [1, 2, 3, 4].map(v => [v, String(v)]), it.count); }
   if (it.type === 'tarima') h += segRow('Alto', 'h', [[0.2, '20 cm'], [0.4, '40 cm'], [0.6, '60 cm']], it.h);
+  if (T.cat === 'mueble') { const [fw, fh, fd] = furnSize(it); h += `<h2>Tamaño</h2>` + rangeRow('p_sw', 'Ancho', 0.3, 4, 0.05, fw, ' m', 2) + rangeRow('p_sd', 'Profundidad', 0.2, 3, 0.05, fd, ' m', 2) + rangeRow('p_sh', 'Alto', 0.2, 2.6, 0.05, fh, ' m', 2) + `<div class="row"><button class="btn" data-act="size0">Tamaño original</button></div>`; }
   if (T.cat === 'mueble') h += `<div class="f"><label for="p_color">Color</label><select id="p_color">${Object.entries(WOODS).map(([k, v]) => `<option value="${k}" ${k === it.color ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`;
   if (T.cat === 'abertura') {
     h += rangeRow('p_w', 'Ancho', 0.6, 4, 0.05, it.w, ' m', 2) + rangeRow('p_h', 'Alto', 0.5, Math.min(2.6, S.env.room.h - 0.1), 0.05, it.h, ' m', 2);
@@ -156,23 +157,25 @@ export function renderProps(light) {
     if (it.type === 'butterfly') h += rangeRow('p_pitch', 'Inclinación', -90, 90, 1, it.pitch, '°') + '<p class="note">−90°: horizontal sobre el actor, como un techo. 0°: vertical, como rebote o bandera gigante.</p>';
   }
   if (it.barn) h += `<p class="note">Viseras: 0° abiertas. Pasados los 30° cada hoja empieza a tapar el centro del haz.</p><div class="bd">${[['t', 'Arriba'], ['b', 'Abajo'], ['l', 'Izq.'], ['r', 'Der.']].map(([k, t]) => `<div class="f"><label for="p_b${k}">${t}</label><input type="range" id="p_b${k}" min="0" max="90" step="1" value="${it.barn[k]}"><output id="p_b${k}V">${it.barn[k]}°</output></div>`).join('')}</div>`;
-  const two = S.people[1].on;
-  h += `<div class="row">${T.cat === 'luz' || T.cat === 'control' ? `<button class="btn" data-act="aim">${two ? 'Apuntar al personaje 1' : 'Apuntar al sujeto'}</button>${two ? '<button class="btn" data-act="aim2">Apuntar al personaje 2</button>' : ''}` : ''}${T.cat !== 'abertura' ? '<button class="btn" data-act="dup">Duplicar</button>' : ''}<button class="btn" data-act="del">Quitar</button></div>`;
+  const onP = S.people.map((P, i) => P.on ? i : -1).filter(i => i >= 0), aimable = T.cat === 'luz' || T.cat === 'control';
+  if (aimable && onP.length > 1) h += `<div class="f"><span>Apuntar a</span><div class="seg">${onP.map(i => `<button data-act="aim" data-i="${i}">Personaje ${i + 1}</button>`).join('')}</div></div>`;
+  h += `<div class="row">${aimable && onP.length === 1 ? '<button class="btn" data-act="aim">Apuntar al sujeto</button>' : ''}${T.cat !== 'abertura' ? '<button class="btn" data-act="dup">Duplicar</button>' : ''}<button class="btn" data-act="del">Quitar</button></div>`;
   box.innerHTML = h; updateReadouts(it);
 }
 function updateReadouts(it) {
   const r = $('#readout'); if (!r) return;
   E.updateLights();
-  const P1 = S.people[0], P2 = S.people[1], Ea = E.illum(it, P1._head, null, true, 0), E2 = P2.on ? E.illum(it, P2._head, null, true, 1) : null;
+  const P1 = S.people[0], Ea = E.illum(it, P1._head, null, true, 0), lx = v => v < 1 ? (v > 0.05 ? v.toFixed(1) + ' lux' : '—') : Math.round(v) + ' lux';
+  const others = S.people.map((P, i) => P.on && i > 0 ? `<span>Rostro ${i + 1} <b>${lx(E.illum(it, P._head, null, true, i))}</b></span>` : '').join('');
   const T = Ea > 1 ? 2.8 * Math.sqrt(Ea / 215 * (ISOS[S.cam.iso] / 800) * E.shutterFactor()) : 0;
   const stop = TSTOPS.reduce((a, b) => Math.abs(Math.log(b / T)) < Math.abs(Math.log(a / T)) ? b : a, TSTOPS[0]);
   const hard = (TYPES[it.type].hard && (!it.diff || it.diff === 'none')) || it.type === 'bombita' || it.type === 'vela';
-  r.innerHTML = `<span>${E2 != null ? 'Rostro 1' : 'En el rostro'} <b>${Ea < 1 ? (Ea > 0.05 ? Ea.toFixed(1) + ' lux' : '—') : Math.round(Ea) + ' lux'}</b></span>${E2 != null ? `<span>Rostro 2 <b>${E2 < 1 ? '—' : Math.round(E2) + ' lux'}</b></span>` : ''}<span>Diafragma sugerido <b>${Ea < 1 ? '—' : T > 22 ? '>T22' : T < 1.4 ? '<T1.4' : 'T' + stop}</b></span><span>Luz <b>${hard ? 'dura' : 'suave'}</b></span>${Ea < 1 && E.illum(it, P1._head, null) > 1 ? '<span class="tag warn">Bloqueada antes del rostro</span>' : ''}`;
+  r.innerHTML = `<span>${others ? 'Rostro 1' : 'En el rostro'} <b>${lx(Ea)}</b></span>${others}<span>Diafragma sugerido <b>${Ea < 1 ? '—' : T > 22 ? '>T22' : T < 1.4 ? '<T1.4' : 'T' + stop}</b></span><span>Luz <b>${hard ? 'dura' : 'suave'}</b></span>${Ea < 1 && E.illum(it, P1._head, null) > 1 ? '<span class="tag warn">Bloqueada antes del rostro</span>' : ''}`;
 }
 $('#props').addEventListener('input', e => {
   const it = S.items.find(i => i.id === UI.sel); if (!it) return; const id = e.target.id, v = e.target.value, out = $('#' + id + 'V');
-  const num = { p_dim: ['dim', '%', 0], p_focus: ['focus', '', 2], p_k: ['k', ' K', 0], p_y: ['y', ' m', 2], p_yaw: ['yaw', '°', 0], p_pitch: ['pitch', '°', 0], p_w: ['w', ' m', 2], p_h: ['h', ' m', 2], p_sill: ['sill', ' m', 2], p_open: ['open', '°', 0], p_arm: ['arm', '°', 0] }[id];
-  if (num) { it[num[0]] = +v; if (out) out.textContent = fmt(+v, num[2]) + num[1]; if ((id === 'p_y' && TYPES[it.type].cat !== 'mueble' && !TYPES[it.type].practical) || id === 'p_arm') E.buildItem(it); }
+  const num = { p_sw: ['sw', ' m', 2], p_sd: ['sd', ' m', 2], p_sh: ['sh', ' m', 2], p_dim: ['dim', '%', 0], p_focus: ['focus', '', 2], p_k: ['k', ' K', 0], p_y: ['y', ' m', 2], p_yaw: ['yaw', '°', 0], p_pitch: ['pitch', '°', 0], p_w: ['w', ' m', 2], p_h: ['h', ' m', 2], p_sill: ['sill', ' m', 2], p_open: ['open', '°', 0], p_arm: ['arm', '°', 0] }[id];
+  if (num) { it[num[0]] = +v; if (out) out.textContent = fmt(+v, num[2]) + num[1]; if ((id === 'p_y' && TYPES[it.type].cat !== 'mueble' && !TYPES[it.type].practical) || id === 'p_arm' || /^p_s[wdh]$/.test(id)) E.buildItem(it); }
   else if (id === 'p_rgb') { it.rgb = v; const bn = $('#blackNote'); if (bn) bn.hidden = !E.isBlack(v); }
   else if (id.startsWith('p_b')) { it.barn[id[3]] = +v; out.textContent = v + '°'; }
   else return;
@@ -194,8 +197,8 @@ $('#props').addEventListener('click', e => {
   }
   const act = e.target.closest('[data-act]'); if (!act) return; const a = act.dataset.act;
   if (a === 'power') { it.on = !it.on; E.syncItem(it); }
-  if (a === 'aim') { aimAtSubject(it, 0); E.syncItem(it); toast('Apuntado a la cabeza del personaje 1.'); }
-  if (a === 'aim2') { aimAtSubject(it, 1); E.syncItem(it); toast('Apuntado a la cabeza del personaje 2.'); }
+  if (a === 'aim') { const i = +(act.dataset.i || 0); aimAtSubject(it, i); E.syncItem(it); toast(`Apuntado a la cabeza del personaje ${i + 1}.`); }
+  if (a === 'size0') { delete it.sw; delete it.sh; delete it.sd; E.buildItem(it); toast('El mueble volvió a su tamaño original.'); }
   if (a === 'del') { E.removeItem(it); UI.sel = null; attachGizmo(); }
   if (a === 'dup') {
     if (E.isLight(it) && lightCount() >= MAX_SHADOW_LIGHTS) { toast(`Máximo ${MAX_SHADOW_LIGHTS} luces con sombra.`); return; }
@@ -215,7 +218,8 @@ $('#city').innerHTML = Object.entries(CITIES).map(([k, c]) => `<option value="${
 export function syncScenePanel() {
   const env = S.env, m = env.mode;
   pressSeg('#envMode', 'm', m); pressSeg('#extKind', 'k', env.ext.kind);
-  $$('[data-for]').forEach(p => { const f = p.dataset.for; p.hidden = f === 'natural' ? m === 'estudio' : f !== m; });
+  $$('[data-for]').forEach(p => { const f = p.dataset.for; p.hidden = f === 'natural' ? m === 'estudio' : !f.split(' ').includes(m); });
+  $('#carColor').value = env.car.color;
   $('#bgc').value = env.studio.color; setRange('bgd', env.studio.dist, v => v.toFixed(1) + ' m');
   setRange('rw', env.room.w, v => v.toFixed(1) + ' m'); setRange('rd', env.room.d, v => v.toFixed(1) + ' m'); setRange('rh', env.room.h, v => v.toFixed(2) + ' m');
   $('#rwall').value = env.room.wall; $('#rfloor').value = env.room.floor;
@@ -237,10 +241,19 @@ $('#envMode').addEventListener('click', e => { const b = e.target.closest('butto
 export function setEnvMode(m) {
   if (S.env.mode === m) return;
   if (m !== 'interior') { const ops = S.items.filter(i => TYPES[i.type].cat === 'abertura'); ops.forEach(o => S.items.splice(S.items.indexOf(o), 1)); }
+  const wasCar = S.env.mode === 'auto';
   S.env.mode = m; PV.custom = false; S.env.amb = m === 'estudio' ? 1 : 0;
-  if (m === 'interior') { const b = E.roomBounds(); if (S.cam.z > b.zF + 1.5) S.cam.z = Math.min(S.cam.z, b.zF + 1.2); }
-  E.buildEnvironment(); syncScenePanel(); renderItems(); updateLensInfo(); drawPlan(); req();
+  if (m === 'interior') { const b = E.roomBounds(); S.cams.forEach(c => { if (c.z > b.zF + 1.5) c.z = Math.min(c.z, b.zF + 1.2); }); }
+  if (m === 'auto') {
+    E.seatPeople();
+    S.cams.forEach(c => { if (Math.abs(c.x) < 1.3 && c.z < 2.9 && c.z > -2.9) c.z = 3.6; });
+    toast('Auto: los personajes van sentados en los asientos. Arrastralos en la planta para cambiarlos de lugar.');
+  } else if (wasCar) S.people.forEach(P => { delete P.seat; });
+  E.buildEnvironment(); if (m === 'auto' || wasCar) E.buildPeople();
+  syncScenePanel(); syncPersonUI(); renderItems(); updateLensInfo(); drawPlan(); req();
+  if (m === 'auto') meterFace(true);
 }
+$('#carColor').addEventListener('change', e => { S.env.car.color = e.target.value; E.buildEnvironment(); drawPlan(); });
 $('#extKind').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.env.ext.kind = b.dataset.k; E.buildEnvironment(); syncScenePanel(); drawPlan(); });
 const bindR = (id, fn, show) => { const el = $('#' + id), o = $('#' + id + 'V'); el.addEventListener('input', () => { fn(+el.value); if (o) o.textContent = show(+el.value); req(); drawPlan(); }); };
 bindR('bgd', v => { S.env.studio.dist = v; E.buildEnvironment(); }, v => v.toFixed(1) + ' m');
@@ -267,28 +280,53 @@ $('#hourQuick').addEventListener('click', e => {
 
 /* ---------- people ---------- */
 const AP = () => S.people[UI.selPerson];
-export function syncPersonUI() {
-  const P = AP(), two = S.people[1].on;
-  pressSeg('#ptab', 'i', UI.selPerson); $('#ptab button[data-i="1"]').disabled = !two;
-  $('#p2toggle').textContent = two ? 'Quitar 2° personaje' : 'Agregar 2° personaje';
-  pressSeg('#pose', 'pose', P.pose); $('#srot').value = ((P.rot + 540) % 360) - 180; $('#srotV').textContent = fmt(+$('#srot').value, 0) + '°';
-  $$('#skin button').forEach((b, i) => b.setAttribute('aria-pressed', i === P.skin));
-  for (const [sel, attr] of [['#frame', 'fr'], ['#focusMode', 'fm']]) $$(sel + ' button').forEach(b => { if (b.dataset[attr] !== 'p1' && b.dataset[attr] !== 'manual') b.disabled = !two; });
-  if (!two && S.cam.frame !== 'p1') S.cam.frame = 'p1';
-  if (!two && S.cam.fm === 'p2') S.cam.fm = 'p1';
+const inCar = () => S.env.mode === 'auto';
+const onPeople = () => S.people.map((P, i) => P.on ? i : -1).filter(i => i >= 0);
+const carRot = P => { if (inCar()) P.rot = clamp(((P.rot + 540) % 360) - 180, -45, 45); };
+// botones de encuadre y foco según los personajes que hay en escena
+function renderFrameButtons() {
+  const ids = onPeople(), lab = i => ids.length > 2 ? 'P' + (i + 1) : 'Personaje ' + (i + 1);
+  for (const c of S.cams) {
+    if (c.frame !== 'both' && !S.people[personIndex(c.frame)]?.on) c.frame = 'p1';
+    if (c.frame === 'both' && ids.length < 2) c.frame = 'p1';
+    if (c.fm !== 'manual' && !S.people[personIndex(c.fm)]?.on) c.fm = 'p1';
+  }
+  $('#frame').innerHTML = ids.map(i => `<button data-fr="p${i + 1}">${lab(i)}</button>`).join('') + (ids.length > 1 ? '<button data-fr="both">Plano conjunto</button>' : '');
+  $('#focusMode').innerHTML = ids.map(i => `<button data-fm="p${i + 1}">${lab(i)}</button>`).join('') + '<button data-fm="manual">Manual</button>';
   pressSeg('#frame', 'fr', S.cam.frame); pressSeg('#focusMode', 'fm', S.cam.fm);
+}
+export function syncPersonUI() {
+  if (!AP() || !AP().on) UI.selPerson = 0;
+  const P = AP(), ids = onPeople(), max = inCar() ? Math.min(MAX_PEOPLE, 5) : MAX_PEOPLE;
+  $('#ptab').innerHTML = ids.map(i => `<button data-i="${i}">${ids.length > 2 ? i + 1 : 'Personaje ' + (i + 1)}</button>`).join('');
+  pressSeg('#ptab', 'i', UI.selPerson);
+  $('#padd').disabled = ids.length >= max; $('#padd').title = ids.length >= max ? `Máximo ${max} personajes${inCar() ? ' en el auto' : ''}.` : '';
+  $('#pdel').hidden = UI.selPerson === 0; $('#pdel').textContent = `Quitar personaje ${UI.selPerson + 1}`;
+  $('#carNote').hidden = !inCar();
+  $$('#pose button').forEach(b => { b.disabled = inCar() && b.dataset.pose !== 'sentado'; });
+  pressSeg('#pose', 'pose', inCar() ? 'sentado' : P.pose);
+  const sr = $('#srot'); sr.min = inCar() ? -45 : -180; sr.max = inCar() ? 45 : 180;
+  sr.value = ((P.rot + 540) % 360) - 180; $('#srotV').textContent = fmt(+sr.value, 0) + '°';
+  $$('#skin button').forEach((b, i) => b.setAttribute('aria-pressed', i === P.skin));
+  renderFrameButtons();
 }
 $('#skin').innerHTML = SKINS.map((h, i) => `<button data-s="${i}" style="background:${h}" aria-label="Tono de piel ${i + 1}"></button>`).join('');
 $('#skin').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; AP().skin = +b.dataset.s; E.buildPeople(); syncPersonUI(); drawPlan(); });
 $('#ptab').addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) selectPerson(+b.dataset.i); });
-$('#p2toggle').addEventListener('click', () => {
-  const P2 = S.people[1]; P2.on = !P2.on;
-  if (P2.on) { const P1 = S.people[0]; P2.x = P1.x + 0.9; P2.z = P1.z - 0.4; P2.rot = -60; P1.rot = P1.rot || 40; UI.selPerson = 1; toast('Personaje 2 agregado. Con “Plano conjunto” la cámara encuadra a los dos.'); }
-  else UI.selPerson = 0;
-  E.buildPeople(); syncPersonUI(); updateLensInfo(); renderProps(); drawPlan();
+$('#padd').addEventListener('click', () => {
+  const i = S.people.findIndex(P => !P.on); if (i < 0) return;
+  const P = S.people[i], P1 = S.people[0]; P.on = true;
+  if (inCar()) { P.seat = E.freeSeat(); if (P.seat < 0) { P.on = false; toast('No quedan asientos libres en el auto.'); return; } const c = E.carSeat(P.seat); Object.assign(P, { x: c.x, z: c.z, rot: 0, pose: 'sentado' }); }
+  else { const [dx, dz] = PERSON_SPOTS[i]; const [x, z] = freeSpot(P, P1.x + dx, P1.z + dz, S.env.mode === 'interior' ? E.roomBounds() : null); Object.assign(P, { x, z, rot: Math.round(Math.atan2(S.cam.x - x, S.cam.z - z) * R2D) }); }
+  UI.selPerson = i; E.buildPeople(); syncPersonUI(); updateLensInfo(); renderProps(); drawPlan();
+  toast(`Personaje ${i + 1} agregado.${onPeople().length === 2 ? ' Con “Plano conjunto” la cámara encuadra a todos.' : ''}`);
 });
-$('#pose').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; AP().pose = b.dataset.pose; E.buildPeople(); syncPersonUI(); updateLensInfo(); drawPlan(); });
-$('#rotq').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const P = AP(); P.rot = Math.round(Math.atan2(S.cam.x - P.x, S.cam.z - P.z) * R2D + +b.dataset.o); E.placePerson(P); syncPersonUI(); drawPlan(); });
+$('#pdel').addEventListener('click', () => {
+  const i = UI.selPerson; if (i === 0) return; S.people[i].on = false; delete S.people[i].seat; UI.selPerson = 0;
+  E.buildPeople(); syncPersonUI(); updateLensInfo(); renderProps(); drawPlan(); toast(`Personaje ${i + 1} quitado.`);
+});
+$('#pose').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; AP().pose = b.dataset.pose; E.buildPeople(); syncPersonUI(); updateLensInfo(); drawPlan(); });
+$('#rotq').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const P = AP(); P.rot = Math.round(Math.atan2(S.cam.x - P.x, S.cam.z - P.z) * R2D + +b.dataset.o); carRot(P); E.placePerson(P); syncPersonUI(); drawPlan(); });
 bindR('srot', v => { AP().rot = v; E.placePerson(AP()); }, v => fmt(v, 0) + '°');
 
 /* ---------- camera ---------- */
@@ -307,6 +345,7 @@ export function updateLensInfo() {
   if (S.env.mode === 'estudio') $('#hTime').textContent = '';
 }
 export function syncCamUI() {
+  renderCamSel();
   pressSeg('#lens', 'l', S.cam.lens); pressSeg('#camH', 'h', S.cam.h); pressSeg('#camA', 'a', S.cam.a); pressSeg('#nd', 'nd', S.cam.nd);
   setRange('hoff', S.cam.hOff, v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v * 100).toFixed(0) + ' cm');
   setRange('tilt', S.cam.tilt, v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + '°');
@@ -337,10 +376,43 @@ $('#fps').addEventListener('click', e => { const b = e.target.closest('button');
 bindC('wb', v => { S.cam.wb = v; S.items.forEach(E.syncItem); renderItems(); }, v => v + ' K');
 bindC('focus', v => { S.cam.focus = v; if (S.cam.fm !== 'manual') { S.cam.fm = 'manual'; syncPersonUI(); } }, v => v.toFixed(2) + ' m');
 
+/* ---------- varias cámaras ---------- */
+const camLabel = i => 'Cámara ' + CAM_NAMES[i];
+function renderCamSel() {
+  const many = S.cams.length > 1, html = S.cams.map((c, i) => `<button data-c="${i}" style="--camc:${CAM_COLORS[i]}" aria-pressed="${i === UI.cam}">${many ? CAM_NAMES[i] : camLabel(i)}</button>`).join('');
+  $('#camSel').innerHTML = html; $('#camSwitch').innerHTML = html; $('#camSwitch').hidden = !many;
+  $('#camAdd').disabled = S.cams.length >= MAX_CAMS; $('#camDel').hidden = !many; $('#camDel').textContent = 'Quitar ' + camLabel(UI.cam).toLowerCase();
+  $('#camNote').hidden = !many;
+  // el color de la cámara activa tiñe la pestaña Cámara, el borde del monitor y el HUD
+  const col = CAM_COLORS[UI.cam];
+  for (const el of [$('.tabpanel[data-panel="camara"]'), $('#tabs [data-tab="camara"]')]) el.style.setProperty('--accent', col);
+  $('#stage').style.setProperty('--camc', col); $('#hCamId').textContent = many ? 'CAM ' + CAM_NAMES[UI.cam] : '';
+}
+export function setActiveCam(i) {
+  if (i === UI.cam || !S.cams[i]) return; UI.cam = i;
+  syncCamUI(); refreshMove(); drawPlan(); req();
+  const b = $('#blk'); b.textContent = camLabel(i) + ' · ' + LENSES[S.cam.lens].label; b.classList.add('on'); clearTimeout(blkT); blkT = setTimeout(() => { b.classList.remove('on'); req(); }, 450);
+}
+on('selectCam', setActiveCam);
+for (const id of ['#camSel', '#camSwitch']) $(id).addEventListener('click', e => { const b = e.target.closest('button[data-c]'); if (b) setActiveCam(+b.dataset.c); });
+$('#camAdd').addEventListener('click', () => {
+  if (S.cams.length >= MAX_CAMS) return;
+  // la nueva cámara copia los ajustes de la activa y se ubica girada alrededor del sujeto
+  const src = S.cam, c = JSON.parse(JSON.stringify(src, (k, v) => k.startsWith('_') ? undefined : v)), T = E.camTarget(src);
+  const r = Math.hypot(src.x - T.x, src.z - T.z) || 3, a = Math.atan2(src.x - T.x, src.z - T.z) + (S.cams.length === 1 ? 0.7 : -0.7);
+  Object.assign(c, { x: Math.round((T.x + Math.sin(a) * r) * 20) / 20, z: Math.round((T.z + Math.cos(a) * r) * 20) / 20, move: { A: null, B: null } });
+  S.cams.push(c); setActiveCam(S.cams.length - 1); toast(`${camLabel(UI.cam)} agregada. La pestaña Cámara ahora ajusta esta cámara.`);
+});
+$('#camDel').addEventListener('click', () => {
+  if (S.cams.length < 2) return; const i = UI.cam; S.cams.splice(i, 1); UI.cam = Math.max(0, i - 1);
+  syncCamUI(); refreshMove(); drawPlan(); req(); toast('Cámara quitada.');
+});
+export const nextCam = () => { if (S.cams.length > 1) setActiveCam((UI.cam + 1) % S.cams.length); };
+
 /* incident metering */
 export function meterFace(quiet) {
   E.updateLights();
-  const P = S.cam.frame === 'p2' && S.people[1].on ? S.people[1] : S.people[0], pi = S.people.indexOf(P), H = P._head;
+  const P = E.personFor(S.cam.frame), pi = S.people.indexOf(P), H = P._head;
   // fuentes candidatas: equipos, sol, ventanas y rebotes → lux para una normal dada
   const srcs = [];
   for (const it of S.items) if (E.isLight(it) && it.on && it.obj) srcs.push(N => E.illum(it, H, N, true, pi));
@@ -364,7 +436,7 @@ export function meterFace(quiet) {
   let best = 0; TSTOPS.forEach((t, i) => { if (Math.abs(Math.log(t / Tn)) < Math.abs(Math.log(TSTOPS[best] / Tn))) best = i; });
   S.cam.T = best; setRange('iris', best, v => 'T' + TSTOPS[v]);
   const tip = Tn > 25 ? ' Sobra luz: bajá el ISO o agregá ND.' : Tn < 1.3 ? ' Falta luz: subí el ISO o sumá luz.' : '';
-  $('#meterV').textContent = `${Ex >= 10 ? Math.round(Ex) : Ex.toFixed(1)} lux en el rostro${S.people[1].on ? ' del personaje ' + (pi + 1) : ''} → T${TSTOPS[best]}.${tip}`;
+  $('#meterV').textContent = `${Ex >= 10 ? Math.round(Ex) : Ex.toFixed(1)} lux en el rostro${onPeople().length > 1 ? ' del personaje ' + (pi + 1) : ''} → T${TSTOPS[best]}.${tip}`;
   updateLensInfo(); req();
 }
 $('#meter').addEventListener('click', () => meterFace(false));
@@ -432,6 +504,7 @@ export function layoutHud() {
   hud.classList.toggle('narrow', mon.w < 560);
   Object.assign(hud.style, { left: mon.x + 'px', top: mon.y + 'px', width: mon.w + 'px', height: mon.h + 'px' });
   pl.hidden = !UI.pip; Object.assign(pl.style, { left: (pip.x + 6) + 'px', top: (pip.y + 6) + 'px' });
-  pl.textContent = UI.view === 'monitor' ? 'SET 3D' : 'MONITOR · ' + LENSES[S.cam.lens].label;
+  pl.textContent = UI.view === 'monitor' ? 'SET 3D' : 'MONITOR' + (S.cams.length > 1 ? ' ' + CAM_NAMES[UI.cam] : '') + ' · ' + LENSES[S.cam.lens].label;
+  $('#stage').classList.toggle('multi', S.cams.length > 1 && UI.view === 'monitor');
   $('#hint').hidden = UI.view !== 'set';
 }

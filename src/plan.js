@@ -1,7 +1,8 @@
 // Planta 2D: dibujo, selección, arrastre, zoom.
-import { S, UI, D2R, R2D, clamp, req, emit, $ } from './state.js';
-import { TYPES, FLAG_SIZES, FACES, LENSES, SKINS } from './catalog.js';
-import { isLight, itemName, beamHalf, lightColor, colorHex, camTarget, focusDist, dofRange, syncItem, placePerson, roomBounds, roomWalls, openingWorld, snapOpening, sunDirection, nat } from './engine.js';
+import { S, UI, D2R, R2D, clamp, req, emit, $, CAM_COLORS, CAM_NAMES } from './state.js';
+import { TYPES, FLAG_SIZES, FACES, LENSES, SKINS, furnSize } from './catalog.js';
+import { CAR, CAR_SEATS } from './build.js';
+import { isLight, itemName, beamHalf, lightColor, colorHex, camTarget, focusDist, dofRange, syncItem, placePerson, roomBounds, roomWalls, openingWorld, snapOpening, sunDirection, nat, seatSnap } from './engine.js';
 import { hourLabel, phaseName } from './sun.js';
 import { footprint, resolveMove, collides } from './collide.js';
 const collidesYaw = (it, yaw) => collides(it, it.x, it.z, yaw);
@@ -15,6 +16,7 @@ export function defaultBounds() {
   const m = S.env.mode;
   if (m === 'interior') { const b = roomBounds(), cz = Math.max(b.zF + 0.6, S.cam.z + 0.6), span = Math.max(b.x1 - b.x0 + 1.2, cz - b.zB + 0.8); const mz = (b.zB - 0.4 + cz) / 2; return { x0: -span / 2, x1: span / 2, z0: mz - span / 2, z1: mz + span / 2 }; }
   if (m === 'exterior') return { x0: -7, x1: 7, z0: -6.6, z1: 7.4 };
+  if (m === 'auto') return { x0: -4.6, x1: 4.6, z0: -3.6, z1: 5.6 };
   return { x0: -4.5, x1: 4.5, z0: -(S.env.studio.dist + 0.7), z1: -(S.env.studio.dist + 0.7) + 9 };
 }
 function updPL(def) {
@@ -65,22 +67,29 @@ export function drawPlanTo(ctx, W, theme) {
       else { const hinge = e(-o.w / 2), a = (o.open || 0) * D2R, tip = w2p(p.x + (w.dir[0] * Math.cos(a) + w.n[0] * Math.sin(a)) * o.w - w.dir[0] * o.w / 2, p.z + (w.dir[1] * Math.cos(a) + w.n[1] * Math.sin(a)) * o.w - w.dir[1] * o.w / 2, W); ctx.beginPath(); ctx.moveTo(...hinge); ctx.lineTo(...tip); ctx.stroke(); ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(...tip); ctx.lineTo(...e(o.w / 2)); ctx.stroke(); ctx.setLineDash([]); }
       ctx.fillStyle = C.fg; ctx.font = F(theme === 'paper' ? 58 : 50); const lp = e(0, 0.35); ctx.fillText((theme === 'paper' ? labelNum(o) + ' ' : '') + TYPES[o.type].name, lp[0] - 18, lp[1]);
     }
-  } else if (mode === 'exterior') {
+  } else if (mode === 'exterior' || mode === 'auto') {
     const k = S.env.ext.kind; ctx.fillStyle = dark ? '#c9bca833' : '#c9bca8';
     if (k === 'calle') { const [x0, z0] = w2p(-15, -6.4, W), [x1, z1] = w2p(15, -6, W); ctx.fillRect(x0, z0, x1 - x0, z1 - z0); const [, s0] = w2p(0, -6, W), [, s1] = w2p(0, -3, W); ctx.fillStyle = dark ? '#ffffff10' : '#00000010'; ctx.fillRect(0, s0, W, s1 - s0); ctx.fillStyle = C.mut; ctx.font = F(50); ctx.fillText('FACHADA · VEREDA', 8, s0 - 6); }
     if (k === 'patio') { ctx.strokeStyle = C.wall; ctx.lineWidth = Math.max(3, m * 0.2); const [x0, z0] = w2p(-6.1, -6, W), [x1, z1] = w2p(6.1, 6, W); ctx.strokeRect(x0, z0, x1 - x0, z1 - z0); }
+    if (mode === 'auto') drawCar(ctx, W, m, dark, C);
   }
-  // camera wedge
-  const c = S.cam, L = LENSES[c.lens], [cx, cz] = w2p(c.x, c.z, W), TT = camTarget(), yaw = Math.atan2(TT.x - c.x, TT.z - c.z), half = L.fish ? 68.75 * D2R : Math.atan(18 / L.f), len = 7 * m;
-  ctx.fillStyle = dark ? '#FFB5471f' : '#FFB54733'; ctx.strokeStyle = '#FFB547'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(cx, cz); ctx.lineTo(cx + Math.sin(yaw - half) * len, cz + Math.cos(yaw - half) * len); ctx.lineTo(cx + Math.sin(yaw + half) * len, cz + Math.cos(yaw + half) * len); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(cx + Math.sin(yaw - half) * len, cz + Math.cos(yaw - half) * len); ctx.lineTo(cx, cz); ctx.lineTo(cx + Math.sin(yaw + half) * len, cz + Math.cos(yaw + half) * len); ctx.stroke();
+  // camera wedges: todas las cámaras, la activa más marcada
+  const multi = S.cams.length > 1, camCol = i => CAM_COLORS[i];
+  const wedge = (cc, i) => {
+    const Lc = LENSES[cc.lens], [qx, qz] = w2p(cc.x, cc.z, W), T2 = camTarget(cc), yw = Math.atan2(T2.x - cc.x, T2.z - cc.z), hf = Lc.fish ? 68.75 * D2R : Math.atan(18 / Lc.f), act = cc === S.cam, ln = (act ? 7 : 4.5) * m, col = camCol(i);
+    ctx.fillStyle = col + (act ? (dark ? '1f' : '33') : '12'); ctx.strokeStyle = col + (act ? '' : '99'); ctx.lineWidth = act ? 1.5 : 1;
+    ctx.beginPath(); ctx.moveTo(qx, qz); ctx.lineTo(qx + Math.sin(yw - hf) * ln, qz + Math.cos(yw - hf) * ln); ctx.lineTo(qx + Math.sin(yw + hf) * ln, qz + Math.cos(yw + hf) * ln); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(qx + Math.sin(yw - hf) * ln, qz + Math.cos(yw - hf) * ln); ctx.lineTo(qx, qz); ctx.lineTo(qx + Math.sin(yw + hf) * ln, qz + Math.cos(yw + hf) * ln); ctx.stroke();
+    return { x: qx, z: qz, yaw: yw, L: Lc, col };
+  };
+  const wedges = S.cams.map(wedge);
+  const c = S.cam, ai = S.cams.indexOf(c), { x: cx, z: cz, yaw, L } = wedges[ai], AC = camCol(ai);
   if (S.cam.dof && !L.fish) {
     const fd = focusDist(), [n0, f0] = dofRange(fd), ux = Math.sin(yaw), uz = Math.cos(yaw), px = -uz, pz = ux, span = 1.6, f1 = Math.min(f0, 12);
     const pt = (d, s) => w2p(c.x + ux * d + px * s, c.z + uz * d + pz * s, W);
-    ctx.fillStyle = dark ? '#7CC7FF1c' : '#7CC7FF30'; const q = [pt(n0, -span), pt(n0, span), pt(f1, span), pt(f1, -span)];
+    ctx.fillStyle = dark ? '#FFB5471c' : '#FFB54730'; const q = [pt(n0, -span), pt(n0, span), pt(f1, span), pt(f1, -span)];
     ctx.beginPath(); ctx.moveTo(...q[0]); q.slice(1).forEach(v => ctx.lineTo(...v)); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#7CC7FF'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(...pt(fd, -span)); ctx.lineTo(...pt(fd, span)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = '#FFB547'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(...pt(fd, -span)); ctx.lineTo(...pt(fd, span)); ctx.stroke(); ctx.setLineDash([]);
   }
   // beams
   for (const it of S.items) {
@@ -95,7 +104,7 @@ export function drawPlanTo(ctx, W, theme) {
     const T = TYPES[it.type]; if (T.cat !== 'mueble') continue;
     const [x, z] = w2p(it.x, it.z, W), sel = UI.sel === it.id && dark;
     ctx.save(); ctx.translate(x, z); ctx.rotate(-it.yaw * D2R);
-    const [w, , d] = T.size; ctx.fillStyle = dark ? (it.color || '#7a5634') + '88' : '#e9e4dc'; ctx.strokeStyle = sel ? '#FFB547' : C.fg; ctx.lineWidth = sel ? 3 : 1.2;
+    const [w, , d] = furnSize(it); ctx.fillStyle = dark ? (it.color || '#7a5634') + '88' : '#e9e4dc'; ctx.strokeStyle = sel ? '#FFB547' : C.fg; ctx.lineWidth = sel ? 3 : 1.2;
     ctx.fillRect(-w / 2 * m, -d / 2 * m, w * m, d * m); ctx.strokeRect(-w / 2 * m, -d / 2 * m, w * m, d * m);
     ctx.beginPath(); ctx.moveTo(-w / 2 * m, d / 2 * m); ctx.lineTo(w / 2 * m, d / 2 * m); ctx.lineWidth = sel ? 4 : 2.5; ctx.stroke();
     ctx.restore();
@@ -133,7 +142,7 @@ export function drawPlanTo(ctx, W, theme) {
     ctx.beginPath(); ctx.arc(sx, sz, m * 0.11, 0, 7); ctx.fillStyle = dark ? '#2a1f1a' : '#6b5040'; ctx.fill();
     ctx.beginPath(); ctx.moveTo(sx + Math.sin(sr) * m * 0.11, sz + Math.cos(sr) * m * 0.11); ctx.lineTo(sx + Math.sin(sr) * m * 0.22, sz + Math.cos(sr) * m * 0.22); ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.stroke();
     if (dark) { const [hx, hz] = w2p(P.x + Math.sin(sr) * HANDLE, P.z + Math.cos(sr) * HANDLE, W); ctx.fillStyle = act ? '#fff' : '#ffffff55'; ctx.beginPath(); ctx.arc(hx, hz, act ? 5 : 3.5, 0, 7); ctx.fill(); }
-    ctx.fillStyle = C.fg; ctx.font = F(theme === 'paper' ? 55 : 44); ctx.fillText('Personaje ' + (i + 1), sx + m * 0.26, sz + m * 0.05);
+    ctx.fillStyle = C.fg; ctx.font = F(theme === 'paper' ? 55 : 44); ctx.fillText((mode === 'auto' ? 'P' : 'Personaje ') + (i + 1), sx + m * 0.26, sz + m * 0.05);
   });
   // equipment and control
   for (const it of S.items) {
@@ -164,17 +173,20 @@ export function drawPlanTo(ctx, W, theme) {
     ctx.fillStyle = C.fg; ctx.font = F(theme === 'paper' ? 55 : 46);
     ctx.fillText((theme === 'paper' ? labelNum(it) + ' ' : '') + itemName(it), x + m * 0.2, z - m * 0.2);
   }
-  // camera icon
-  ctx.save(); ctx.translate(cx, cz); ctx.rotate(-yaw); ctx.fillStyle = '#FFB547'; ctx.strokeStyle = C.bg; ctx.lineWidth = 2;
-  ctx.fillRect(-m * 0.12, -m * 0.18, m * 0.24, m * 0.3); ctx.strokeRect(-m * 0.12, -m * 0.18, m * 0.24, m * 0.3);
-  ctx.beginPath(); ctx.moveTo(-m * 0.07, m * 0.12); ctx.lineTo(m * 0.07, m * 0.12); ctx.lineTo(m * 0.1, m * 0.24); ctx.lineTo(-m * 0.1, m * 0.24); ctx.closePath(); ctx.fill(); ctx.restore();
-  if (!(S.move.A && S.move.B)) { ctx.fillStyle = '#FFB547'; ctx.font = F(44); ctx.fillText('CÁMARA · ' + L.label, cx + m * 0.25, cz + m * 0.3); }
+  // camera icons
+  wedges.forEach((wg, i) => {
+    const act = i === ai;
+    ctx.save(); ctx.translate(wg.x, wg.z); ctx.rotate(-wg.yaw); ctx.fillStyle = wg.col; ctx.strokeStyle = act && multi ? C.fg : C.bg; ctx.lineWidth = act && multi ? 2.5 : 2;
+    ctx.fillRect(-m * 0.12, -m * 0.18, m * 0.24, m * 0.3); ctx.strokeRect(-m * 0.12, -m * 0.18, m * 0.24, m * 0.3);
+    ctx.beginPath(); ctx.moveTo(-m * 0.07, m * 0.12); ctx.lineTo(m * 0.07, m * 0.12); ctx.lineTo(m * 0.1, m * 0.24); ctx.lineTo(-m * 0.1, m * 0.24); ctx.closePath(); ctx.fill(); ctx.restore();
+    if (!(act && S.move.A && S.move.B)) { ctx.fillStyle = wg.col; ctx.font = (act ? '600 ' : '') + F(44); ctx.fillText((multi ? 'CÁM ' + CAM_NAMES[i] : 'CÁMARA') + ' · ' + wg.L.label, wg.x + m * 0.25, wg.z + m * 0.3); }
+  });
   // A/B
   const AB = ['A', 'B'].filter(k => S.move[k]);
   if (AB.length) {
     const pts = AB.map(k => w2p(S.move[k].x, S.move[k].z, W));
-    if (pts.length === 2) { ctx.strokeStyle = '#FFB547'; ctx.lineWidth = 2; ctx.setLineDash([7, 5]); ctx.beginPath(); ctx.moveTo(...pts[0]); ctx.lineTo(...pts[1]); ctx.stroke(); ctx.setLineDash([]); }
-    AB.forEach((k, i) => { const [x, z] = pts[i]; ctx.strokeStyle = '#FFB547'; ctx.lineWidth = 2; ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(x, z, m * 0.2, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#FFB547'; ctx.font = `600 ${Math.round(m * 0.24)}px "Archivo", system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(k, x, z + 1); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; });
+    if (pts.length === 2) { ctx.strokeStyle = AC; ctx.lineWidth = 2; ctx.setLineDash([7, 5]); ctx.beginPath(); ctx.moveTo(...pts[0]); ctx.lineTo(...pts[1]); ctx.stroke(); ctx.setLineDash([]); }
+    AB.forEach((k, i) => { const [x, z] = pts[i]; ctx.strokeStyle = AC; ctx.lineWidth = 2; ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(x, z, m * 0.2, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = AC; ctx.font = `600 ${Math.round(m * 0.24)}px "Archivo", system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(k, x, z + 1); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; });
   }
   // compass + sun
   if (mode !== 'estudio') {
@@ -202,6 +214,21 @@ export function drawPlanTo(ctx, W, theme) {
     ctx.fillStyle = '#000c'; ctx.fillRect(bx, by, tw, 22); ctx.fillStyle = '#FFB547'; ctx.fillText(dragInfo.text, bx + 6, by + 15);
   }
 }
+// auto visto desde arriba: carrocería, vidrios y asientos (frente hacia abajo de la planta)
+function drawCar(ctx, W, m, dark, C) {
+  const P = (x, z) => w2p(x, z, W), r = (x0, z0, x1, z1, fill, stroke, lw = 1.5) => { const [a, b] = P(x0, z0), [c, d] = P(x1, z1); if (fill) { ctx.fillStyle = fill; ctx.fillRect(a, b, c - a, d - b); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.strokeRect(a, b, c - a, d - b); } };
+  const paint = S.env.car.color;
+  r(-CAR.x, CAR.zB, CAR.x, CAR.zF, dark ? paint + '55' : '#f1eeea', C.fg, 2);
+  r(-0.82, -1.38, 0.82, 1.0, dark ? '#0b0a0f' : '#ffffff', C.mut, 1);
+  ctx.strokeStyle = dark ? '#7CC7FF' : C.mut; ctx.lineWidth = 2;
+  for (const [z0, z1] of [[1.0, 0.5], [-1.38, -0.9]]) { const [a, b] = P(-0.78, z0), [c] = P(0.78, z0), [, d] = P(0, z1); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, b); ctx.stroke(); ctx.globalAlpha = 0.25; ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(a, Math.min(b, d), c - a, Math.abs(d - b)); ctx.globalAlpha = 1; }
+  const seatC = dark ? '#ffffff14' : '#e4e1dc';
+  for (const [x, z] of CAR_SEATS.slice(0, 2)) r(x - 0.25, z - 0.28, x + 0.25, z + 0.3, seatC, C.mut, 1);
+  r(-0.75, -1.1, 0.75, -0.48, seatC, C.mut, 1);
+  const [wx, wz] = P(0.38, 0.66); ctx.strokeStyle = C.mut; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(wx, wz, m * 0.18, m * 0.05, 0, 0, 7); ctx.stroke();
+  ctx.fillStyle = C.mut; ctx.font = `${Math.round(W / 50)}px "Archivo", system-ui, sans-serif`; ctx.textAlign = 'center';
+  const [fx, fz] = P(0, 1.75); ctx.fillText('FRENTE', fx, fz); const [bx, bz] = P(0, -1.95); ctx.fillText('BAÚL', bx, bz); ctx.textAlign = 'left';
+}
 const labelNum = it => (S.items.indexOf(it) + 1) + '.';
 export function drawPlan() {
   const dpr = Math.max(2, window.devicePixelRatio || 1), W = Math.round(plan.clientWidth * dpr);
@@ -222,7 +249,8 @@ plan.addEventListener('pointerdown', e => {
   updPL(); const r = plan.getBoundingClientRect(), W = r.width, px = e.clientX - r.left, py = e.clientY - r.top, m = W / (PL.x1 - PL.x0);
   let best = null, bd = 14;
   const test = (tx, tz, kind, id) => { const [ax, az] = w2p(tx, tz, W), d = Math.hypot(ax - px, az - py); if (d < bd) { bd = d; best = { kind, id }; } };
-  { const [cx, cz] = w2p(S.cam.x, S.cam.z, W); if (Math.hypot(cx - px, cz - py) < Math.max(20, m * 0.32)) { plan.setPointerCapture(e.pointerId); pdrag = { kind: 'cam' }; return; } }
+  { const ac = S.cams.indexOf(S.cam), order = [ac, ...S.cams.map((_, i) => i).filter(i => i !== ac)];
+    for (const i of order) { const [cx, cz] = w2p(S.cams[i].x, S.cams[i].z, W); if (Math.hypot(cx - px, cz - py) < Math.max(20, m * 0.32)) { if (i !== ac) emit('selectCam', i); plan.setPointerCapture(e.pointerId); pdrag = { kind: 'cam' }; return; } } }
   for (const it of S.items) { if (TYPES[it.type].cat === 'abertura' || TYPES[it.type].practical) continue; const y = it.yaw * D2R; test(it.x + Math.sin(y) * HANDLE, it.z + Math.cos(y) * HANDLE, 'rot', it.id); }
   S.people.forEach((P, i) => { if (!P.on) return; const r0 = P.rot * D2R; test(P.x + Math.sin(r0) * HANDLE, P.z + Math.cos(r0) * HANDLE, 'prot', i); });
   for (const it of S.items) { const c = TYPES[it.type].cat; if (c === 'abertura') { const p = openingWorld(it); test(p.x, p.z, 'move', it.id); } else if (c !== 'mueble' && !(c === 'grip' && it.type !== 'butterfly')) test(it.x, it.z, 'move', it.id); }
@@ -249,8 +277,8 @@ plan.addEventListener('pointermove', e => {
   }
   if (pdrag.kind === 'person' || pdrag.kind === 'prot') {
     const P = S.people[pdrag.id];
-    if (pdrag.kind === 'person') { const [nx, nz] = resolveMove(P, snap(wx), snap(wz), S.env.mode === 'interior' ? roomBounds() : null); P.x = nx; P.z = nz; dragInfo = null; }
-    else P.rot = Math.round(Math.atan2(wx - P.x, wz - P.z) * R2D / 5) * 5;
+    if (pdrag.kind === 'person') { if (S.env.mode === 'auto') seatSnap(P, wx, wz); else { const [nx, nz] = resolveMove(P, snap(wx), snap(wz), S.env.mode === 'interior' ? roomBounds() : null); P.x = nx; P.z = nz; } dragInfo = null; }
+    else { P.rot = Math.round(Math.atan2(wx - P.x, wz - P.z) * R2D / 5) * 5; if (S.env.mode === 'auto') P.rot = clamp(P.rot, -45, 45); }
     placePerson(P); emit('peopleChanged'); req(); drawPlan(); return;
   }
   if (pdrag.kind === 'cam') { S.cam.x = snap(wx); S.cam.z = snap(wz); dragInfo = { x: wx, z: wz, text: measure(wx, wz).replace(/ · .*$/, ' del personaje') }; emit('camChanged'); req(); drawPlan(); return; }
